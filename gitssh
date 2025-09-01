@@ -1,0 +1,1008 @@
+#!/bin/sh
+
+#================================================================#
+# GITSSH v1.0 - Git SSH User Session Manager CLI
+# Clean command dispatcher without backward compatibility
+#================================================================#
+
+set -e
+
+# Version information
+readonly GITSSH_VERSION="1.0.0"
+readonly GITSSH_NAME="GitSSH"
+
+#================================================================#
+# SCRIPT LOCATION DETECTION
+#================================================================#
+
+if [ -n "${BASH_SOURCE:-}" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+fi
+
+# Determine modules directory based on installation structure
+MODULES_DIR=""
+
+# Check if we're running from the symlink location
+if [ -L "$0" ]; then
+    # Follow symlink to actual executable location
+    REAL_SCRIPT="$(readlink "$0")"
+    if [ "${REAL_SCRIPT#/}" = "$REAL_SCRIPT" ]; then
+        # Relative path, resolve it
+        REAL_SCRIPT="$(cd "$(dirname "$0")" && cd "$(dirname "$REAL_SCRIPT")" && pwd)/$(basename "$REAL_SCRIPT")"
+    fi
+    SCRIPT_DIR="$(dirname "$REAL_SCRIPT")"
+fi
+
+# Look for modules in the modules/ subdirectory
+if [ -f "$SCRIPT_DIR/modules/gitssh-utils.sh" ]; then
+    MODULES_DIR="$SCRIPT_DIR/modules"
+elif [ -f "$SCRIPT_DIR/gitssh-utils.sh" ]; then
+    # Fallback: modules in same directory as script
+    MODULES_DIR="$SCRIPT_DIR"
+elif [ -f "$HOME/.local/bin/gitssh-libs/modules/gitssh-utils.sh" ]; then
+    # Standard user installation
+    MODULES_DIR="$HOME/.local/bin/gitssh-libs/modules"
+elif [ -f "/usr/local/lib/gitssh/modules/gitssh-utils.sh" ]; then
+    # System-wide installation
+    MODULES_DIR="/usr/local/lib/gitssh/modules"
+else
+    printf "Error: Cannot locate GitSSH modules\n" >&2
+    printf "Searched locations:\n" >&2
+    printf "  - %s/modules/gitssh-utils.sh\n" "$SCRIPT_DIR" >&2
+    printf "  - %s/gitssh-utils.sh\n" "$SCRIPT_DIR" >&2
+    printf "  - %s/.local/bin/gitssh-libs/modules/gitssh-utils.sh\n" "$HOME" >&2
+    printf "  - /usr/local/lib/gitssh/modules/gitssh-utils.sh\n" >&2
+    exit 1
+fi
+
+#================================================================#
+# CONFIGURATION
+#================================================================#
+
+readonly GIT_SSH_CONFIG_FILE="${GIT_SSH_CONFIG_FILE:-$HOME/.gitssh-sessions.json}"
+readonly GIT_SSH_USERS_FILE="${GIT_SSH_USERS_FILE:-$HOME/.gitssh-users.json}"
+readonly GIT_SESSION_TEMP="/tmp/gitssh-session-$$"
+
+export GIT_SSH_CONFIG_FILE GIT_SSH_USERS_FILE GIT_SESSION_TEMP SCRIPT_DIR
+
+#================================================================#
+# MODULE LOADING
+#================================================================#
+
+_load_modules() {
+    local modules="utils init users sessions remotes commands setup"
+    local loaded_count=0
+    local failed_modules=""
+    
+    for module in $modules; do
+        module_file="$MODULES_DIR/gitssh-${module}.sh"
+        if [ -f "$module_file" ]; then
+            if . "$module_file" 2>/dev/null; then
+                loaded_count=$((loaded_count + 1))
+            else
+                failed_modules="$failed_modules gitssh-${module}.sh"
+                printf "Error: Failed to load module: gitssh-%s.sh\n" "$module" >&2
+            fi
+        else
+            failed_modules="$failed_modules gitssh-${module}.sh"
+            printf "Error: Required module not found: gitssh-%s.sh\n" "$module" >&2
+            printf "Expected location: %s\n" "$module_file" >&2
+        fi
+    done
+    
+    if [ "$loaded_count" -lt 6 ]; then
+        printf "Error: Only %d of 6 required modules loaded\n" "$loaded_count" >&2
+        if [ -n "$failed_modules" ]; then
+            printf "Failed modules:%s\n" "$failed_modules" >&2
+        fi
+        printf "Modules directory: %s\n" "$MODULES_DIR" >&2
+        exit 1
+    fi
+    
+    # Optional: Print success message for debugging
+    # printf "Successfully loaded %d GitSSH modules from: %s\n" "$loaded_count" "$MODULES_DIR" >&2
+}
+
+#================================================================#
+# COMMAND HANDLERS
+#================================================================#
+
+_handle_user_commands() {
+    subcommand="$1"
+    shift
+    
+    case "$subcommand" in
+        add)
+            user_add "$@"
+            ;;
+        remove|rm|delete)
+            user_remove "$@"
+            ;;
+        list|ls)
+            user_list "$@"
+            ;;
+        status|show|info)
+            user_status "$@"
+            ;;
+        switch)
+            if [ $# -eq 0 ]; then
+                printf "Error: Username required\n" >&2
+                printf "Usage: gitssh user switch <username>\n" >&2
+                user_list_simple
+                return 1
+            fi
+            user_switch "$@"
+            ;;
+        edit)
+            user_edit "$@"
+            ;;
+        *)
+            printf "Error: Unknown user command '%s'\n" "$subcommand" >&2
+            _show_user_help
+            return 1
+            ;;
+    esac
+}
+
+_handle_session_commands() {
+    subcommand="$1"
+    shift
+    
+    case "$subcommand" in
+        set|config|configure)
+            session_set "$@"
+            ;;
+        show|status|info)
+            session_show "$@"
+            ;;
+        clear|reset)
+            session_clear "$@"
+            ;;
+        forget|remove)
+            session_forget "$@"
+            ;;
+        list|ls)
+            session_list "$@"
+            ;;
+        cleanup|clean)
+            session_cleanup "$@"
+            ;;
+        export)
+            session_export "$@"
+            ;;
+        import)
+            session_import "$@"
+            ;;
+        *)
+            printf "Error: Unknown session command '%s'\n" "$subcommand" >&2
+            _show_session_help
+            return 1
+            ;;
+    esac
+}
+
+_handle_ssh_commands() {
+    subcommand="$1"
+    shift
+    
+    case "$subcommand" in
+        status|info)
+            ssh_status "$@"
+            ;;
+        doctor|diagnose)
+            ssh_doctor "$@"
+            ;;
+        repair|fix)
+            ssh_repair "$@"
+            ;;
+        test)
+            if [ $# -eq 0 ]; then
+                printf "Error: SSH host required\n" >&2
+                printf "Usage: gitssh ssh test <hostname>\n" >&2
+                return 1
+            fi
+            ssh_test "$@"
+            ;;
+        backup)
+            ssh_backup "$@"
+            ;;
+        restore)
+            ssh_restore "$@"
+            ;;
+        learn|help)
+            ssh_learn "$@"
+            ;;
+        *)
+            printf "Error: Unknown ssh command '%s'\n" "$subcommand" >&2
+            _show_ssh_help
+            return 1
+            ;;
+    esac
+}
+
+_handle_remote_commands() {
+    subcommand="$1"
+    shift
+    
+    case "$subcommand" in
+        convert|ssh)
+            remote_convert "$@"
+            ;;
+        add)
+            if [ $# -lt 2 ]; then
+                printf "Error: Remote name and URL required\n" >&2
+                printf "Usage: gitssh remote add <name> <url>\n" >&2
+                return 1
+            fi
+            remote_add "$@"
+            ;;
+        check|analyze)
+            remote_check "$@"
+            ;;
+        list|ls)
+            remote_list "$@"
+            ;;
+        recommendations|recommend)
+            remote_recommendations "$@"
+            ;;
+        *)
+            printf "Error: Unknown remote command '%s'\n" "$subcommand" >&2
+            _show_remote_help
+            return 1
+            ;;
+    esac
+}
+
+_handle_git_commands() {
+    subcommand="$1"
+    shift
+    
+    case "$subcommand" in
+        clone)
+            git_clone "$@"
+            ;;
+        status|st)
+            git_status "$@"
+            ;;
+        info|analyze)
+            git_info "$@"
+            ;;
+        commit|ci)
+            git_commit "$@"
+            ;;
+        push)
+            git_push "$@"
+            ;;
+        pull)
+            git_pull "$@"
+            ;;
+        fetch)
+            git_fetch "$@"
+            ;;
+        init)
+            git_init "$@"
+            ;;
+        *)
+            printf "Error: Unknown git command '%s'\n" "$subcommand" >&2
+            _show_git_help
+            return 1
+            ;;
+    esac
+}
+
+_handle_setup_commands() {
+    subcommand="$1"
+    shift
+    
+    case "$subcommand" in
+        github)
+            setup_github "$@"
+            ;;
+        gitlab)
+            setup_gitlab "$@"
+            ;;
+        *)
+            printf "Error: Unknown setup target '%s'\n" "$subcommand" >&2
+            _show_setup_help
+            return 1
+            ;;
+    esac
+}
+
+_handle_config_commands() {
+    subcommand="$1"
+    shift
+    
+    case "$subcommand" in
+        show|info)
+            config_show "$@"
+            ;;
+        reset)
+            config_reset "$@"
+            ;;
+        backup)
+            config_backup "$@"
+            ;;
+        restore)
+            if [ $# -eq 0 ]; then
+                printf "Error: Backup path required\n" >&2
+                printf "Usage: gitssh config restore <backup-path>\n" >&2
+                return 1
+            fi
+            config_restore "$@"
+            ;;
+        migrate)
+            config_migrate "$@"
+            ;;
+        *)
+            printf "Error: Unknown config command '%s'\n" "$subcommand" >&2
+            _show_config_help
+            return 1
+            ;;
+    esac
+}
+
+#================================================================#
+# HELP FUNCTIONS
+#================================================================#
+
+_show_main_help() {
+    cat << 'EOF'
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║            ██████╗         ███████╗███████╗██╗  ██╗           ║
+║           ██╔════╝ ██╗ ██╗ ██╔════╝██╔════╝██║  ██║           ║
+║           ██║  ███╗══╝████║███████╗███████╗███████║           ║
+║           ██║   ██║██║ ██║ ╚════██║╚════██║██╔══██║           ║
+║           ██████╔╝ ██║ ██║ ███████║███████║██║  ██║           ║
+║           ╚═════╝  ╚═╝ ╚═╝ ╚══════╝╚══════╝╚═╝  ╚═╝v1.0-Oz    ║
+║                     <-POSIX Compatible->                      ║
+║ Multi Git,GitHub,GitLab and SSH account management with ease! ║
+╚═══════════════════════════════════════════════════════════════╝
+
+GitSSH v1.0 - Multi Git,GitHub,GitLab and SSH account management with ease!
+
+USAGE:
+    gitssh <command> [subcommand] [options]
+
+SETUP & INITIALIZATION:
+    init                    Initialize GitSSH configuration
+    onboard                 Interactive first-time setup wizard
+    validate                Validate system configuration
+
+USER MANAGEMENT:
+    user add                Add new user account
+    user remove <user>      Remove user account
+    user list               List all configured users
+    user switch <user>      Switch to user globally
+    user status             Show current user status
+
+SESSION MANAGEMENT:
+    session set             Set user for current repository
+    session show            Show current session status
+    session clear           Clear session data
+    session forget          Remove persistent config for repo
+    session list            List all session repositories
+
+SSH MANAGEMENT:
+    ssh status              Show SSH configuration status
+    ssh doctor              Diagnose SSH connection issues
+    ssh repair              Fix common SSH problems
+    ssh test <host>         Test SSH connection
+    
+SETUP WIZARDS:
+    setup github            Setup GitHub SSH authentication
+    setup gitlab            Setup GitLab SSH authentication
+
+REPOSITORY OPERATIONS:
+    clone <url>             Enhanced git clone with auto-setup
+    status                  Enhanced git status with user info
+    info                    Show detailed repository information
+    commit [opts]           Enhanced git commit with verification
+    push [opts]             Enhanced git push with verification
+
+REMOTE MANAGEMENT:
+    remote convert          Convert HTTPS remote to SSH
+    remote add <name> <url> Add remote with SSH conversion
+    remote check            Check remote configuration
+    remote list             List all remotes with details
+
+CONFIGURATION:
+    config show             Show current configuration
+    config reset            Reset configuration to defaults
+    config backup           Backup configuration files
+    config restore <path>   Restore from backup
+
+INFORMATION:
+    help [command]          Show help (general or command-specific)
+    version                 Show version information
+
+EXAMPLES:
+    gitssh onboard                    # First-time setup
+    gitssh user add                   # Add new user
+    gitssh user switch work           # Switch to work identity
+    gitssh session set                # Configure current repo
+    gitssh clone git@github.com:user/repo.git
+    gitssh remote convert             # Convert HTTPS to SSH
+    gitssh ssh status                 # Check SSH setup
+
+EOF
+}
+
+_show_user_help() {
+    cat << 'EOF'
+USER MANAGEMENT:
+
+    gitssh user add [options]
+        Add new user account interactively
+        Options:
+          --name <name>       Full display name
+          --email <email>     Email address
+          --ssh-host <host>   SSH hostname
+
+    gitssh user remove [username]
+        Remove user account with confirmation
+        
+    gitssh user list [options]
+        List all configured users
+        Options:
+          --simple            Simple list for scripting
+          
+    gitssh user switch <username>
+        Switch to specified user globally
+        
+    gitssh user status
+        Show current Git user and SSH status
+
+EXAMPLES:
+    gitssh user add
+    gitssh user add --name "John Doe" --email "john@work.com"
+    gitssh user list
+    gitssh user switch work
+    gitssh user remove old-account
+
+EOF
+}
+
+_show_session_help() {
+    cat << 'EOF'
+SESSION MANAGEMENT:
+
+    gitssh session set [options]
+        Set user for current repository
+        Options:
+          --user <username>   Set specific user
+
+    gitssh session show [options]  
+        Show current session status
+        Options:
+          --verbose           Show detailed information
+
+    gitssh session clear
+        Clear all session data (temporary mappings)
+
+    gitssh session forget
+        Remove persistent configuration for current repository
+
+    gitssh session list
+        List all repositories in current session
+
+EXAMPLES:
+    gitssh session set
+    gitssh session set --user work
+    gitssh session show
+    gitssh session clear
+
+EOF
+}
+
+_show_ssh_help() {
+    cat << 'EOF'
+SSH MANAGEMENT:
+
+    gitssh ssh status
+        Show comprehensive SSH configuration status
+
+    gitssh ssh doctor
+        Diagnose SSH connection issues and problems
+
+    gitssh ssh repair
+        Automatically fix common SSH problems
+
+    gitssh ssh test <hostname>
+        Test SSH connection to specific host
+
+    gitssh ssh backup
+        Create backup of SSH configuration
+
+    gitssh ssh restore <path>
+        Restore SSH configuration from backup
+
+EXAMPLES:
+    gitssh ssh status
+    gitssh ssh doctor
+    gitssh ssh test github-work
+    gitssh ssh repair
+
+EOF
+}
+
+_show_remote_help() {
+    cat << 'EOF'
+REMOTE MANAGEMENT:
+
+    gitssh remote convert
+        Convert HTTPS remote to SSH for current repository
+
+    gitssh remote add <name> <url>
+        Add new remote with SSH conversion
+
+    gitssh remote check
+        Analyze current remote configuration
+
+    gitssh remote list
+        Show all remotes with detailed information
+
+EXAMPLES:
+    gitssh remote convert
+    gitssh remote add upstream git@github.com:upstream/repo.git
+    gitssh remote check
+    gitssh remote list
+
+EOF
+}
+
+_show_git_help() {
+    cat << 'EOF'
+ENHANCED GIT OPERATIONS:
+
+    gitssh clone <url> [directory]
+        Enhanced git clone with automatic user setup
+
+    gitssh status
+        Enhanced git status with user and remote information
+
+    gitssh info
+        Show detailed repository information and analysis
+
+    gitssh commit [options]
+        Enhanced git commit with user verification
+
+    gitssh push [options]
+        Enhanced git push with SSH testing and verification
+
+EXAMPLES:
+    gitssh clone git@github.com:user/repo.git
+    gitssh status
+    gitssh commit -m "Update feature"
+    gitssh push origin main
+
+EOF
+}
+
+_show_setup_help() {
+    cat << 'EOF'
+SETUP WIZARDS:
+
+    gitssh setup github
+        Interactive GitHub SSH key setup wizard
+        - Generates SSH keys
+        - Configures SSH hosts
+        - Guides through GitHub key addition
+        - Tests connectivity
+
+    gitssh setup gitlab
+        Interactive GitLab SSH key setup wizard
+        - Supports GitLab.com and self-hosted instances
+        - Complete SSH configuration
+        - Connection testing
+
+EXAMPLES:
+    gitssh setup github
+    gitssh setup gitlab
+
+EOF
+}
+
+_show_config_help() {
+    cat << 'EOF'
+CONFIGURATION MANAGEMENT:
+
+    gitssh config show
+        Show current system configuration and status
+
+    gitssh config reset
+        Reset all configuration to defaults (destructive)
+
+    gitssh config backup
+        Create timestamped backup of all configuration
+
+    gitssh config restore <path>
+        Restore configuration from backup directory
+
+    gitssh config migrate
+        Migrate from old configuration format
+
+EXAMPLES:
+    gitssh config show
+    gitssh config backup
+    gitssh config restore ~/gitssh-backup-20250101
+
+EOF
+}
+
+_show_command_help() {
+    command="$1"
+    
+    case "$command" in
+        user)     _show_user_help ;;
+        session)  _show_session_help ;;
+        ssh)      _show_ssh_help ;;
+        remote)   _show_remote_help ;;
+        git)      _show_git_help ;;
+        setup)    _show_setup_help ;;
+        config)   _show_config_help ;;
+        *)        _show_main_help ;;
+    esac
+}
+
+#================================================================#
+# GLOBAL OPTIONS PARSING
+#================================================================#
+
+_parse_global_options() {
+    GITSSH_VERBOSE=false
+    GITSSH_QUIET=false
+    GITSSH_FORCE=false
+    
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --verbose|-v)
+                GITSSH_VERBOSE=true
+                export GITSSH_VERBOSE
+                shift
+                ;;
+            --quiet|-q)
+                GITSSH_QUIET=true
+                export GITSSH_QUIET
+                shift
+                ;;
+            --force|-f)
+                GITSSH_FORCE=true
+                export GITSSH_FORCE
+                shift
+                ;;
+            --help|-h)
+                _show_main_help
+                exit 0
+                ;;
+            --version)
+                printf "%s v%s\n" "$GITSSH_NAME" "$GITSSH_VERSION"
+                exit 0
+                ;;
+            --)
+                shift
+                break
+                ;;
+            -*)
+                printf "Error: Unknown global option '%s'\n" "$1" >&2
+                printf "Use 'gitssh --help' for usage information\n" >&2
+                exit 1
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+}
+
+#================================================================#
+# MAIN COMMAND ROUTER
+#================================================================#
+
+_route_command() {
+    if [ $# -eq 0 ]; then
+        _show_main_help
+        return 0
+    fi
+    
+    command="$1"
+    shift
+    
+    # Handle help requests for any command
+    case "${1:-}" in
+        --help|-h|help)
+            _show_command_help "$command"
+            return 0
+            ;;
+    esac
+    
+    case "$command" in
+        # Setup and initialization
+        init|initialize)
+            system_init "$@"
+            ;;
+        onboard|setup-wizard)
+            system_onboard "$@"
+            ;;
+        validate|check|doctor)
+            system_validate "$@"
+            ;;
+        setup)
+            if [ $# -eq 0 ]; then
+                printf "Error: Setup target required\n" >&2
+                _show_setup_help
+                return 1
+            fi
+            _handle_setup_commands "$@"
+            ;;
+            
+        # User management
+        user|users)
+            if [ $# -eq 0 ]; then
+                user_status
+            else
+                _handle_user_commands "$@"
+            fi
+            ;;
+            
+        # Session management
+        session|sess)
+            if [ $# -eq 0 ]; then
+                session_show
+            else
+                _handle_session_commands "$@"
+            fi
+            ;;
+            
+        # SSH management
+        ssh)
+            if [ $# -eq 0 ]; then
+                ssh_status
+            else
+                _handle_ssh_commands "$@"
+            fi
+            ;;
+            
+        # Remote management
+        remote|remotes)
+            if [ $# -eq 0 ]; then
+                remote_list
+            else
+                _handle_remote_commands "$@"
+            fi
+            ;;
+            
+        # Git operations (direct commands)
+        clone)
+            if [ $# -eq 0 ]; then
+                printf "Error: Repository URL required\n" >&2
+                printf "Usage: gitssh clone <url> [directory]\n" >&2
+                return 1
+            fi
+            git_clone "$@"
+            ;;
+        status|st)
+            git_status "$@"
+            ;;
+        info|analyze)
+            git_info "$@"
+            ;;
+        commit|ci)
+            git_commit "$@"
+            ;;
+        push)
+            git_push "$@"
+            ;;
+        pull)
+            git_pull "$@"
+            ;;
+        fetch)
+            git_fetch "$@"
+            ;;
+            
+        # Configuration management
+        config|configuration)
+            if [ $# -eq 0 ]; then
+                config_show
+            else
+                _handle_config_commands "$@"
+            fi
+            ;;
+            
+        # Global user switching (shortcut)
+        switch|sw)
+            if [ $# -eq 0 ]; then
+                printf "Error: Username required\n" >&2
+                printf "Usage: gitssh switch <username>\n" >&2
+                user_list_simple
+                return 1
+            fi
+            user_switch "$@"
+            ;;
+            
+        # Information
+        help|--help|-h)
+            if [ $# -gt 0 ]; then
+                _show_command_help "$1"
+            else
+                _show_main_help
+            fi
+            ;;
+        version|--version|-v)
+            printf "%s v%s\n" "$GITSSH_NAME" "$GITSSH_VERSION"
+            ;;
+            
+        # Handle unknown commands
+        *)
+            printf "Error: Unknown command '%s'\n" "$command" >&2
+            printf "Run 'gitssh help' for available commands\n" >&2
+            return 1
+            ;;
+    esac
+}
+
+#================================================================#
+# ONBOARDING WIZARD
+#================================================================#
+
+_run_onboarding() {
+    printf "\n"
+    printf "===========================================\n"
+    printf "    GitSSH v%s - First Time Setup\n" "$GITSSH_VERSION"
+    printf "===========================================\n\n"
+    
+    printf "Welcome to GitSSH! Let's get you set up.\n\n"
+    
+    # Check if already configured
+    if system_check_configured 2>/dev/null; then
+        printf "GitSSH is already configured!\n"
+        printf "Current users:\n"
+        user_list
+        printf "\nWould you like to:\n"
+        printf "  1. Add another user\n"
+        printf "  2. Reconfigure everything\n"
+        printf "  3. Exit\n\n"
+        
+        printf "Choice (1-3): "
+        read -r choice
+        case "$choice" in
+            1) user_add; return $? ;;
+            2) config_reset && _run_onboarding; return $? ;;
+            3) return 0 ;;
+            *) printf "Invalid choice\n"; return 1 ;;
+        esac
+    fi
+    
+    # First-time setup
+    printf "What would you like to set up?\n"
+    printf "  1. GitHub account (recommended)\n"
+    printf "  2. GitLab account\n"
+    printf "  3. Both GitHub and GitLab\n"
+    printf "  4. Manual configuration only\n"
+    printf "  5. Exit\n\n"
+    
+    printf "Choice (1-5): "
+    read -r setup_choice
+    
+    case "$setup_choice" in
+        1)
+            printf "\nSetting up GitHub...\n"
+            system_init && setup_github
+            ;;
+        2)
+            printf "\nSetting up GitLab...\n"
+            system_init && setup_gitlab
+            ;;
+        3)
+            printf "\nSetting up GitHub and GitLab...\n"
+            system_init && setup_github && setup_gitlab
+            ;;
+        4)
+            printf "\nInitializing configuration only...\n"
+            system_init
+            printf "Use 'gitssh user add' to add users manually\n"
+            ;;
+        5)
+            printf "Setup cancelled\n"
+            return 0
+            ;;
+        *)
+            printf "Invalid choice\n"
+            return 1
+            ;;
+    esac
+    
+    # Post-setup summary
+    if [ "$setup_choice" != "5" ]; then
+        printf "\n"
+        printf "===========================================\n"
+        printf "    Setup Complete!\n"
+        printf "===========================================\n\n"
+        
+        printf "What you can do now:\n"
+        printf "  • gitssh user list          - See configured users\n"
+        printf "  • gitssh session set        - Configure repo user\n"
+        printf "  • gitssh clone <url>        - Clone with auto-setup\n"
+        printf "  • gitssh remote convert     - Convert HTTPS to SSH\n"
+        printf "  • gitssh switch <user>      - Switch identity globally\n\n"
+        
+        # Quick status check
+        printf "Current status:\n"
+        user_status
+    fi
+}
+
+#================================================================#
+# ERROR HANDLING
+#================================================================#
+
+_handle_error() {
+    error_code=$?
+    if [ $error_code -ne 0 ]; then
+        case $error_code in
+            1) printf "Command failed\n" >&2 ;;
+            2) printf "Missing dependencies (run 'gitssh init')\n" >&2 ;;
+            3) printf "Configuration error (run 'gitssh validate')\n" >&2 ;;
+            4) printf "SSH error (run 'gitssh ssh doctor')\n" >&2 ;;
+            5) printf "Network error\n" >&2 ;;
+            *) printf "Unknown error (code %d)\n" $error_code >&2 ;;
+        esac
+    fi
+    return $error_code
+}
+
+#================================================================#
+# INITIALIZATION
+#================================================================#
+
+_initialize_system() {
+    # Load all modules
+    _load_modules
+    
+    # Set up cleanup
+    trap '_cleanup_system' EXIT
+    
+    # Quick dependency check for core operations
+    if [ "${1:-}" != "init" ] && [ "${1:-}" != "onboard" ] && [ "${1:-}" != "help" ] && [ "${1:-}" != "version" ]; then
+        if ! command -v jq >/dev/null 2>&1; then
+            printf "Warning: jq not found. Run 'gitssh init' for setup instructions.\n" >&2
+        fi
+    fi
+}
+
+_cleanup_system() {
+    rm -f "$GIT_SESSION_TEMP" "$GIT_SESSION_TEMP.tmp" 2>/dev/null || true
+    rm -f "/tmp/gitssh-*-$$" 2>/dev/null || true
+}
+
+#================================================================#
+# MAIN ENTRY POINT
+#================================================================#
+
+main() {
+    # Initialize system
+    _initialize_system "$@"
+    
+    # Parse global options
+    _parse_global_options "$@"
+    
+    # Handle special case: onboard command
+    if [ "${1:-}" = "onboard" ]; then
+        _run_onboarding
+        return $?
+    fi
+    
+    # Route to appropriate handler
+    if ! _route_command "$@"; then
+        _handle_error
+        exit $?
+    fi
+}
+
+# Execute main function if script is run directly
+if [ "${BASH_SOURCE:-$0}" = "$0" ]; then
+    main "$@"
+fi

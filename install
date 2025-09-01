@@ -1,0 +1,1423 @@
+#!/bin/sh
+
+#================================================================#
+# GitSSH v1.0 INSTALLER - Updated for New Structure
+# Enhanced installer for modular POSIX compatible CLI tool
+#================================================================#
+
+set -e  # Exit on any error
+
+SCRIPT_NAME="gitssh"
+INSTALL_DIR="$HOME/.local/bin/gitssh-libs"
+MAIN_SCRIPT="$INSTALL_DIR/gitssh"
+MODULES_DIR="$INSTALL_DIR/modules"
+SYMLINK_PATH="$HOME/.local/bin/gitssh"
+TEMP_DIR="${TMPDIR:-/tmp}/gitssh-installer-$$"
+
+# Required module files for the modular system
+REQUIRED_MODULES="gitssh-utils.sh gitssh-users.sh gitssh-sessions.sh gitssh-remotes.sh gitssh-commands.sh gitssh-init.sh gitssh-setup.sh"
+
+# Colors for output (POSIX compatible)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Box drawing characters
+BOX_H="─"
+BOX_V="│"
+BOX_TL="┌"
+BOX_TR="┐"
+BOX_BL="└"
+BOX_BR="┘"
+
+# Create temp directory
+mkdir -p "$TEMP_DIR"
+
+# Logging functions with enhanced visuals
+log_info() { printf "${BLUE}${BOLD}[INFO]${NC} %s\n" "$1"; }
+log_success() { printf "${GREEN}${BOLD}[SUCCESS]${NC} %s\n" "$1"; }
+log_warning() { printf "${YELLOW}${BOLD}[WARNING]${NC} %s\n" "$1"; }
+log_error() { printf "${RED}${BOLD}[ERROR]${NC} %s\n" "$1"; }
+log_step() { printf "${CYAN}${BOLD}[STEP %s]${NC} %s\n" "$1" "$2"; }
+
+# String length function (POSIX compatible)
+str_length() {
+    printf "%s" "$1" | wc -c | tr -d ' '
+}
+
+# Repeat character function
+repeat_char() {
+    _char="$1"
+    _count="$2"
+    _result=""
+    _i=0
+    while [ $_i -lt $_count ]; do
+        _result="${_result}$_char"
+        _i=$((_i + 1))
+    done
+    printf "%s" "$_result"
+}
+
+# Interactive prompt functions
+draw_box() {
+    _title="$1"
+    _content="$2"
+    _width="${3:-70}"
+    
+    # Top border
+    printf "${CYAN}${BOX_TL}"
+    repeat_char "$BOX_H" $((_width - 2))
+    printf "${BOX_TR}${NC}\n"
+    
+    # Title
+    if [ -n "$_title" ]; then
+        _title_len=$(str_length "$_title")
+        _padding=$(((_width - _title_len - 4) / 2))
+        printf "${CYAN}${BOX_V}${NC}${BOLD}"
+        repeat_char " " $_padding
+        printf "%s" "$_title"
+        repeat_char " " $((_width - _title_len - _padding - 4))
+        printf "${CYAN}${BOX_V}${NC}\n"
+        printf "${CYAN}├"
+        repeat_char "$BOX_H" $((_width - 2))
+        printf "┤${NC}\n"
+    fi
+    
+    # Content - handle line by line
+    printf "%s\n" "$_content" | while IFS= read -r line; do
+        _line_len=$(str_length "$line")
+        _content_padding=$((_width - _line_len - 4))
+        [ $_content_padding -lt 0 ] && _content_padding=0
+        printf "${CYAN}${BOX_V}${NC} %s" "$line"
+        repeat_char " " $_content_padding
+        printf "${CYAN}${BOX_V}${NC}\n"
+    done
+    
+    # Bottom border
+    printf "${CYAN}${BOX_BL}"
+    repeat_char "$BOX_H" $((_width - 2))
+    printf "${BOX_BR}${NC}\n"
+}
+
+progress_bar() {
+    _current="$1"
+    _total="$2" 
+    _description="$3"
+    _width=40
+    
+    _percentage=$((_current * 100 / _total))
+    _filled=$((_current * _width / _total))
+    _empty=$((_width - _filled))
+    
+    printf "\r${CYAN}["
+    repeat_char '█' $_filled
+    repeat_char '░' $_empty
+    printf "${CYAN}]${NC} ${BOLD}%d%%${NC} - %s" $_percentage "$_description"
+    
+    if [ $_current -eq $_total ]; then
+        printf "\n"
+    fi
+}
+
+interactive_prompt() {
+    _prompt="$1"
+    _default="$2"
+    _instruction="$3"
+    
+    # Print instruction and prompt to stderr so they don't get captured
+    if [ -n "$_instruction" ]; then
+        printf "${BLUE}%s${NC}\n" "$_instruction" >&2
+    fi
+    
+    if [ -n "$_default" ]; then
+        printf "${YELLOW}${BOLD}?${NC} %s ${CYAN}[%s]${NC}: " "$_prompt" "$_default" >&2
+    else
+        printf "${YELLOW}${BOLD}?${NC} %s: " "$_prompt" >&2
+    fi
+    
+    # Read user input properly
+    IFS= read -r response
+    
+    # Clean the response by removing whitespace and converting to lowercase
+    response=$(printf "%s" "$response" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
+    
+    # Use default if response is empty after cleaning
+    if [ -z "$response" ]; then
+        response="$_default"
+    fi
+    
+    # Return ONLY the cleaned response to stdout
+    printf "%s" "$response"
+}
+
+show_welcome() {
+    clear
+    printf "${MAGENTA}${BOLD}"
+    cat << 'EOF'
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║            ██████╗         ███████╗███████╗██╗  ██╗           ║
+║           ██╔════╝ ██╗ ██╗ ██╔════╝██╔════╝██║  ██║           ║
+║           ██║  ███╗══╝████║███████╗███████╗███████║           ║
+║           ██║   ██║██║ ██║ ╚════██║╚════██║██╔══██║           ║
+║           ██████╔╝ ██║ ██║ ███████║███████║██║  ██║           ║
+║           ╚═════╝  ╚═╝ ╚═╝ ╚══════╝╚══════╝╚═╝  ╚═╝v1.0-Oz    ║
+║                     <-POSIX Compatible->                      ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+Manage multiple Git, GitHub & GitLab SSH account seesions with ease! 
+EOF
+    printf "${NC}\n"
+    
+    printf "${CYAN}${BOLD}Modern CLI tool for effortless workflow${NC}\n"
+    printf "\n"
+    printf "${GREEN}✨ v1.0 Features:${NC}\n"
+    printf "  • Clean CLI interface (gitssh <command>)\n"
+    printf "  • Common git command with extra features of GitSSH \n" 
+    printf "  • Session-based user switching per repository\n"
+    printf "  • Global account switching with one command\n"
+    printf "  • Automatic HTTPS to SSH git remote conversion\n"
+    printf "  • Interactive SSH key, GitHub and GitLab setup wizards\n"
+    printf "  • Persistent user preferences across sessions and repos\n"
+    printf "  • Full POSIX shell compatibility\n"
+    printf "  • Enhanced diagnostics and repair tools\n"
+    printf "  • Tab completion support for built-in gitssh commands\n"
+    printf "  • And many more!\n"
+    printf "\n"
+}
+
+#================================================================#
+# MODULE DETECTION AND VALIDATION
+#================================================================#
+
+count_words() {
+    set -- $1
+    printf "%d" "$#"
+}
+
+detect_modules() {
+    log_step "1" "Detecting GitSSH v1.0 system files"
+    
+    found_modules=""
+    missing_modules=""
+    
+    printf "  ${CYAN}Scanning current directory structure...${NC}\n"
+    
+    # Check main executable
+    if [ -f "gitssh" ]; then
+        printf "  ${GREEN}✓${NC} Found: ${CYAN}gitssh${NC} (main executable)\n"
+    else
+        printf "  ${RED}✗${NC} Missing: ${RED}gitssh${NC} (main executable)\n"
+        missing_modules="$missing_modules gitssh"
+    fi
+    
+    # Check modules directory
+    if [ -d "modules" ]; then
+        printf "  ${GREEN}✓${NC} Found: ${CYAN}modules/${NC} (modules directory)\n"
+        
+        # Check each required module
+        for module in $REQUIRED_MODULES; do
+            if [ -f "modules/$module" ]; then
+                found_modules="$found_modules $module"
+                printf "  ${GREEN}✓${NC} Found: ${CYAN}modules/%s${NC}\n" "$module"
+            else
+                missing_modules="$missing_modules $module"
+                printf "  ${RED}✗${NC} Missing: ${RED}modules/%s${NC}\n" "$module"
+            fi
+        done
+    else
+        printf "  ${RED}✗${NC} Missing: ${RED}modules/${NC} (modules directory)\n"
+        printf "  ${YELLOW}⚠${NC}  All module files should be in a 'modules/' subdirectory\n"
+        missing_modules="$missing_modules modules_directory"
+    fi
+    
+    printf "\n"
+    
+    missing_count=$(count_words "$missing_modules")
+    if [ $missing_count -gt 0 ]; then
+        _missing_list=$(printf "%s" "$missing_modules" | tr ' ' '\n')
+        draw_box "MISSING REQUIRED FILES" "The following files are required but not found:
+
+$_missing_list
+
+Expected project structure:
+  gitssh                  (main CLI executable)
+  install                 (this installer)
+  modules/                (modules directory)
+    ├── gitssh-utils.sh
+    ├── gitssh-users.sh
+    ├── gitssh-sessions.sh
+    ├── gitssh-remotes.sh
+    ├── gitssh-commands.sh
+    ├── gitssh-init.sh
+    └── gitssh-setup.sh
+
+Please ensure all files are present and run installer from project root."
+        printf "\n"
+        log_error "Cannot proceed without required files"
+        return 1
+    fi
+    
+    found_count=$(count_words "$found_modules")
+    required_count=$(count_words "$REQUIRED_MODULES")
+    log_success "File detection complete (1 executable + $found_count/$required_count modules found)"
+    printf "\n"
+    return 0
+}
+
+validate_module_structure() {
+    log_info "Validating GitSSH v1.0 structure and dependencies"
+    
+    # Check main executable is the new CLI dispatcher
+    if ! grep -q "GITSSH.*CLI.*v1.0\|GitSSH.*v1.0.*CLI" "gitssh" 2>/dev/null; then
+        log_warning "Main executable may not be the v1.0 CLI dispatcher"
+        printf "  ${YELLOW}⚠${NC}  Expected GitSSH v1.0 CLI dispatcher\n"
+    else
+        printf "  ${GREEN}✓${NC} Main executable appears to be GitSSH v1.0 CLI\n"
+    fi
+    
+    # Check for module loading in main file
+    if grep -q "gitssh-.*\.sh" "gitssh" 2>/dev/null; then
+        printf "  ${GREEN}✓${NC} Module loading configuration found\n"
+    else
+        log_warning "Module loading configuration not detected"
+        printf "  ${YELLOW}⚠${NC}  Main script may not load modules correctly\n"
+    fi
+    
+    # Check if modules have proper structure
+    missing_functions=""
+    for module in $REQUIRED_MODULES; do
+        [ ! -f "modules/$module" ] && continue
+        
+        case "$module" in
+            gitssh-users.sh)
+                if ! grep -q "user_add\|user_list\|user_switch" "modules/$module" 2>/dev/null; then
+                    missing_functions="$missing_functions $module:user_functions"
+                fi
+                ;;
+            gitssh-sessions.sh)
+                if ! grep -q "session_set\|session_show\|session_clear" "modules/$module" 2>/dev/null; then
+                    missing_functions="$missing_functions $module:session_functions"
+                fi
+                ;;
+            gitssh-init.sh)
+                if ! grep -q "system_init\|system_onboard\|system_validate" "modules/$module" 2>/dev/null; then
+                    missing_functions="$missing_functions $module:system_functions"
+                fi
+                ;;
+        esac
+    done
+    
+    missing_func_count=$(count_words "$missing_functions")
+    if [ $missing_func_count -gt 0 ]; then
+        log_warning "Some modules may not have v1.0 CLI functions"
+        printf "  ${YELLOW}⚠${NC}  Missing functions: %s\n" "$missing_functions"
+        printf "  ${BLUE}ℹ${NC}  This may be normal if modules are in transition\n"
+    else
+        printf "  ${GREEN}✓${NC} All modules appear to have v1.0 CLI functions\n"
+    fi
+    
+    printf "  ${GREEN}✓${NC} Module structure validation complete\n"
+    printf "\n"
+    return 0
+}
+
+#================================================================#
+# DEPENDENCY CHECKS  
+#================================================================#
+
+check_dependencies() {
+    log_step "2" "Checking system dependencies"
+    
+    missing_deps=""
+    dep_status=""
+    
+    # Check for jq
+    if command -v jq >/dev/null 2>&1; then
+        jq_version=$(jq --version 2>/dev/null)
+        dep_status="${dep_status}${GREEN}✓ jq (${jq_version})${NC}        "
+    else
+        missing_deps="$missing_deps jq"
+        dep_status="${dep_status}${RED}✗ jq${NC}        "
+    fi
+    
+    # Check for git
+    if command -v git >/dev/null 2>&1; then
+        git_version=$(git --version 2>/dev/null | cut -d' ' -f3)
+        dep_status="${dep_status}${GREEN}✓ git (${git_version})${NC}       "
+    else
+        missing_deps="$missing_deps git"
+        dep_status="${dep_status}${RED}✗ git${NC}       "
+    fi
+    
+    # Check for ssh
+    if command -v ssh >/dev/null 2>&1; then
+        ssh_version=$(ssh -V 2>&1 | head -1 | cut -d' ' -f1)
+        dep_status="${dep_status}${GREEN}✓ ssh (${ssh_version})${NC}"
+    else
+        missing_deps="$missing_deps openssh-client"
+        dep_status="${dep_status}${RED}✗ ssh${NC}"
+    fi
+    
+    printf "  Dependencies: %b\n" "$dep_status"
+    
+    missing_count=$(count_words "$missing_deps")
+    if [ $missing_count -gt 0 ]; then
+        printf "\n"
+        _deps_list=$(printf "%s" "$missing_deps" | tr ' ' '\n')
+        draw_box "MISSING DEPENDENCIES" "The following packages are required:
+
+$_deps_list
+
+Install them using your package manager:"
+        printf "\n"
+        printf "${YELLOW}${BOLD}Installation Commands:${NC}\n"
+        printf "  ${CYAN}Ubuntu/Debian:${NC} sudo apt update && sudo apt install %s\n" "$missing_deps"
+        printf "  ${CYAN}CentOS/RHEL:${NC}   sudo yum install %s\n" "$missing_deps"
+        printf "  ${CYAN}Fedora:${NC}        sudo dnf install %s\n" "$missing_deps"
+        printf "  ${CYAN}macOS:${NC}         brew install %s\n" "$missing_deps"
+        printf "  ${CYAN}Arch Linux:${NC}    sudo pacman -S %s\n" "$missing_deps"
+        printf "\n"
+        log_error "Please install missing dependencies and run installer again"
+        return 1
+    fi
+    
+    log_success "All dependencies satisfied"
+    printf "\n"
+    return 0
+}
+
+#================================================================#
+# INSTALLATION FUNCTIONS
+#================================================================#
+
+install_gitssh_system() {
+    log_step "3" "Installing GitSSH v1.0 CLI system"
+    
+    # Create main installation directory
+    mkdir -p "$INSTALL_DIR"
+    printf "  ${GREEN}✓${NC} Created installation directory: ${CYAN}%s${NC}\n" "$INSTALL_DIR"
+    
+    # Create modules subdirectory
+    mkdir -p "$MODULES_DIR"
+    printf "  ${GREEN}✓${NC} Created modules directory: ${CYAN}%s${NC}\n" "$MODULES_DIR"
+    
+    # Copy main executable
+    printf "  ${CYAN}⚡${NC} Installing main executable...\n"
+    cp "gitssh" "$MAIN_SCRIPT"
+    chmod +x "$MAIN_SCRIPT"
+    printf "    ${GREEN}✓${NC} Installed: ${CYAN}gitssh${NC}\n"
+    
+    # Copy installer for future use
+    cp "install" "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR/install"
+    printf "    ${GREEN}✓${NC} Installed: ${CYAN}install${NC}\n"
+    
+    # Copy all module files
+    printf "  ${CYAN}⚡${NC} Installing modules...\n"
+    
+    installed_modules=""
+    failed_modules=""
+    
+    for module in $REQUIRED_MODULES; do
+        if [ -f "modules/$module" ]; then
+            cp "modules/$module" "$MODULES_DIR/"
+            chmod +x "$MODULES_DIR/$module"
+            installed_modules="$installed_modules $module"
+            printf "    ${GREEN}✓${NC} Installed: ${CYAN}%s${NC}\n" "$module"
+        else
+            failed_modules="$failed_modules $module"
+            printf "    ${RED}✗${NC} Failed: ${RED}%s${NC} (file not found)\n" "$module"
+        fi
+    done
+    
+    failed_count=$(count_words "$failed_modules")
+    if [ $failed_count -gt 0 ]; then
+        log_error "Failed to install required modules: $failed_modules"
+        return 1
+    fi
+    
+    # Create symlink for easy access
+    printf "  ${CYAN}⚡${NC} Creating symlink...\n"
+    
+    # Remove existing symlink if present
+    if [ -L "$SYMLINK_PATH" ]; then
+        rm "$SYMLINK_PATH"
+    fi
+    
+    # Create symlink
+    ln -s "$MAIN_SCRIPT" "$SYMLINK_PATH"
+    
+    if [ -L "$SYMLINK_PATH" ]; then
+        printf "  ${GREEN}✓${NC} Created symlink: ${CYAN}%s${NC} → ${CYAN}%s${NC}\n" "$SYMLINK_PATH" "$MAIN_SCRIPT"
+    else
+        log_error "Failed to create symlink"
+        return 1
+    fi
+    
+    installed_count=$(count_words "$installed_modules")
+    log_success "GitSSH v1.0 installation complete (1 executable + $installed_count modules + symlink)"
+    printf "\n"
+    return 0
+}
+
+setup_shell_integration() {
+    log_step "4" "Setting up shell integration"
+    
+    shell_configs=""
+    
+    # Detect available shell configs
+    [ -f "$HOME/.bashrc" ] && shell_configs="$shell_configs $HOME/.bashrc"
+    [ -f "$HOME/.zshrc" ] && shell_configs="$shell_configs $HOME/.zshrc" 
+    [ -f "$HOME/.profile" ] && shell_configs="$shell_configs $HOME/.profile"
+    
+    config_count=$(count_words "$shell_configs")
+    if [ $config_count -eq 0 ]; then
+        log_warning "No shell configuration files found"
+        printf "  ${YELLOW}⚡${NC} Creating ~/.bashrc for shell integration\n"
+        touch "$HOME/.bashrc"
+        shell_configs="$HOME/.bashrc"
+    fi
+    
+    # GitSSH v1.0 integration block
+    integration_block="# GitSSH v1.0 CLI Integration
+# Add ~/.local/bin to PATH if not already present
+if [ -d \"\$HOME/.local/bin\" ]; then
+    case \":\$PATH:\" in
+        *\":\$HOME/.local/bin:\"*) ;;
+        *) export PATH=\"\$PATH:\$HOME/.local/bin\" ;;
+    esac
+fi
+
+# GitSSH CLI completion (if available)
+if [ -f \"\$HOME/.local/bin/gitssh/completion.sh\" ]; then
+    . \"\$HOME/.local/bin/gitssh/completion.sh\"
+fi"
+    
+    path_updated=false
+    
+    for config_file in $shell_configs; do
+        config_name=$(basename "$config_file")
+        
+        # Check if already integrated
+        if grep -q "GitSSH.*Integration\|GitSSH.*CLI" "$config_file" 2>/dev/null; then
+            printf "  ${YELLOW}⚠${NC} Updating existing integration in ${CYAN}%s${NC}\n" "$config_name"
+            
+            # Remove old integration blocks
+            sed -i '/# GitSSH.*Integration/,+10d' "$config_file" 2>/dev/null || true
+            sed -i '/# Git-SSH Manager Integration/,+5d' "$config_file" 2>/dev/null || true
+        fi
+        
+        # Add new integration block
+        printf "\n%s\n" "$integration_block" >> "$config_file"
+        
+        printf "  ${GREEN}✓${NC} Added integration to ${CYAN}%s${NC}\n" "$config_name"
+        path_updated=true
+    done
+    
+    if [ "$path_updated" = "true" ]; then
+        printf "  ${BLUE}ℹ${NC}  PATH updated - restart terminal or run: source ~/.bashrc\n"
+    fi
+    
+    log_success "Shell integration complete"
+    printf "\n"
+}
+
+initialize_system() {
+    log_step "5" "Initializing GitSSH v1.0 configuration"
+    
+    # Test that the main executable works
+    printf "  ${CYAN}⚡${NC} Testing GitSSH CLI...\n"
+    if "$MAIN_SCRIPT" version >/dev/null 2>&1; then
+        printf "  ${GREEN}✓${NC} GitSSH CLI responds correctly\n"
+    else
+        log_error "GitSSH CLI failed to respond"
+        return 1
+    fi
+    
+    # Run initialization
+    printf "  ${CYAN}⚡${NC} Initializing system configuration...\n"
+    if "$MAIN_SCRIPT" init >/dev/null 2>&1; then
+        printf "  ${GREEN}✓${NC} System initialized successfully\n"
+    else
+        log_warning "System initialization had issues"
+        printf "  ${YELLOW}⚠${NC}  You can run 'gitssh init' manually later\n"
+    fi
+    
+    # Test basic CLI functionality
+    printf "  ${CYAN}⚡${NC} Testing CLI commands...\n"
+    if "$MAIN_SCRIPT" help >/dev/null 2>&1; then
+        printf "  ${GREEN}✓${NC} Help system working\n"
+    else
+        log_warning "Help system may not be working properly"
+    fi
+    
+    log_success "System initialization complete"
+    printf "\n"
+}
+
+create_completion_support() {
+    printf "\n${CYAN}${BOLD}TAB COMPLETION${NC}\n"
+    printf "GitSSH v1.0 supports tab completion for enhanced usability.\n\n"
+    
+    create_completion=$(interactive_prompt "Enable tab completion?" "yes" "Type 'yes' to enable, or 'no' to skip")
+    
+    case "$create_completion" in
+        yes|y)
+            log_step "6" "Setting up tab completion"
+            
+            completion_file="$INSTALL_DIR/completion.sh"
+            
+            cat > "$completion_file" << 'EOF'
+#!/bin/bash
+# GitSSH v1.0 Tab Completion
+
+_gitssh_completion() {
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    
+    case $COMP_CWORD in
+        1)
+            opts="user session ssh remote clone commit push status info switch init onboard validate setup config help version"
+            COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+            ;;
+        2)
+            case "${COMP_WORDS[1]}" in
+                user)
+                    opts="add remove list status switch"
+                    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+                    ;;
+                session)
+                    opts="set show clear forget list"
+                    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+                    ;;
+                ssh)
+                    opts="status doctor repair test backup restore"
+                    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+                    ;;
+                remote)
+                    opts="convert add check list recommendations"
+                    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+                    ;;
+                setup)
+                    opts="github gitlab"
+                    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+                    ;;
+                config)
+                    opts="show reset backup restore migrate"
+                    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+                    ;;
+                switch)
+                    # Complete with available usernames if possible
+                    if command -v gitssh >/dev/null 2>&1; then
+                        local users=$(gitssh user list --simple 2>/dev/null)
+                        COMPREPLY=( $(compgen -W "${users}" -- ${cur}) )
+                    fi
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+# Register completion for gitssh command
+complete -F _gitssh_completion gitssh
+EOF
+            
+            chmod +x "$completion_file"
+            printf "  ${GREEN}✓${NC} Created completion script: ${CYAN}%s${NC}\n" "$completion_file"
+            printf "  ${BLUE}ℹ${NC}  Will be loaded automatically in new shell sessions\n"
+            
+            log_success "Tab completion setup complete"
+            printf "\n"
+            ;;
+        *)
+            printf "${BLUE}Skipping tab completion setup${NC}\n\n"
+            ;;
+    esac
+}
+
+#================================================================#
+# ENHANCED FUNCTION REFERENCE  
+#================================================================#
+
+show_function_reference() {
+    printf "${BOLD}${MAGENTA}📚 GitSSH v1.0 CLI REFERENCE${NC}\n"
+    printf "${MAGENTA}"
+    repeat_char '=' 80
+    printf "${NC}\n\n"
+    
+    # Setup & Initialization
+    draw_box "SETUP & INITIALIZATION" "gitssh init               Initialize GitSSH configuration
+gitssh onboard            Interactive first-time setup wizard
+gitssh validate           Validate system configuration
+gitssh version            Show version information
+gitssh help               Show comprehensive help"
+    printf "\n"
+    
+    # User Management
+    draw_box "USER MANAGEMENT" "gitssh user add           Add new user account
+gitssh user remove <user> Remove user account
+gitssh user list          List all configured users
+gitssh user switch <user> Switch to user globally
+gitssh user status        Show current user status"
+    printf "\n"
+    
+    # Session Management
+    draw_box "SESSION MANAGEMENT" "gitssh session set        Set user for current repository
+gitssh session show       Show current session status
+gitssh session clear      Clear session data
+gitssh session forget     Remove persistent config for repo
+gitssh session list       List all session repositories"
+    printf "\n"
+    
+    # SSH Management
+    draw_box "SSH MANAGEMENT" "gitssh ssh status         Show SSH configuration status
+gitssh ssh doctor         Diagnose SSH connection issues
+gitssh ssh repair         Fix common SSH problems
+gitssh ssh test <host>    Test SSH connection to host"
+    printf "\n"
+    
+    # Setup Wizards
+    draw_box "SETUP WIZARDS" "gitssh setup github       Setup GitHub SSH authentication
+gitssh setup gitlab       Setup GitLab SSH authentication"
+    printf "\n"
+    
+    # Git Operations
+    draw_box "GIT OPERATIONS" "gitssh clone <url>        Enhanced git clone with auto-setup
+gitssh status             Enhanced git status with user info
+gitssh info               Show detailed repository information
+gitssh commit [opts]      Enhanced git commit with verification
+gitssh push [opts]        Enhanced git push with verification"
+    printf "\n"
+    
+    # Remote Management
+    draw_box "REMOTE MANAGEMENT" "gitssh remote convert     Convert HTTPS remote to SSH
+gitssh remote add <n> <u> Add remote with SSH conversion
+gitssh remote check       Check remote configuration
+gitssh remote list        List all remotes with details"
+    printf "\n"
+    
+    # Configuration
+    draw_box "CONFIGURATION" "gitssh config show        Show current configuration
+gitssh config reset       Reset configuration to defaults
+gitssh config backup      Backup configuration files
+gitssh config restore     Restore configuration from backup"
+    printf "\n"
+    
+    # Global Commands (shortcuts)
+    draw_box "GLOBAL SHORTCUTS" "gitssh switch <user>      Quick global user switch
+gitssh <user>             Direct user switch (if user exists)"
+    printf "\n"
+}
+
+show_usage_examples() {
+    printf "${BOLD}${BLUE}💡 USAGE EXAMPLES${NC}\n"
+    printf "${BLUE}"
+    repeat_char '=' 80
+    printf "${NC}\n\n"
+    
+    draw_box "TYPICAL WORKFLOW" "# First time setup
+gitssh onboard
+
+# Add users
+gitssh user add
+# Follow prompts to configure 'work' and 'personal' accounts
+
+# Switch globally to work account
+gitssh switch work
+
+# Clone a repository (auto-configures for current user)
+gitssh clone git@github.com:company/project.git
+
+# Work in repository with enhanced commands
+cd project
+gitssh status          # Shows user info and SSH status
+gitssh commit -m 'msg' # Verifies user before committing
+gitssh push           # Tests SSH before pushing
+
+# Switch context for personal project
+gitssh switch personal
+cd ~/personal-project
+gitssh session set    # Set specific user for this repo"
+    printf "\n"
+    
+    draw_box "ADVANCED FEATURES" "# Convert existing HTTPS repo to SSH
+cd existing-repo
+gitssh remote convert
+
+# SSH management
+gitssh ssh status      # Check all SSH connections
+gitssh ssh doctor      # Diagnose issues
+gitssh ssh test github-work  # Test specific connection
+
+# Session management
+gitssh session show   # Show current mappings
+gitssh session list   # List all managed repositories
+gitssh session clear  # Clear temporary session data
+
+# System maintenance
+gitssh validate       # Check system health
+gitssh config backup  # Backup all configurations"
+    printf "\n"
+}
+
+#================================================================#
+# INSTALLATION FLOW
+#================================================================#
+
+installation_summary() {
+    printf "${BOLD}${GREEN}🎉 GitSSH v1.0 INSTALLATION COMPLETE${NC}\n"
+    printf "${GREEN}"
+    repeat_char '=' 80
+    printf "${NC}\n\n"
+    
+    module_count=$(find "$MODULES_DIR" -name "gitssh-*.sh" 2>/dev/null | wc -l)
+    draw_box "INSTALLATION SUMMARY" "Installation Location: $INSTALL_DIR/
+Main Executable: $MAIN_SCRIPT
+Modules Directory: $MODULES_DIR/
+Symlink: $SYMLINK_PATH → $MAIN_SCRIPT
+Configuration: ~/.gitssh-sessions.json & ~/.gitssh-users.json
+Shell Integration: Added to detected shell config files
+Module Count: $module_count modules installed
+Tab Completion: $([ -f "$INSTALL_DIR/completion.sh" ] && echo "Enabled" || echo "Disabled")"
+    printf "\n"
+    
+    draw_box "NEXT STEPS" "1. Restart terminal or run: source ~/.bashrc
+2. Run first-time setup: gitssh onboard
+3. Or initialize manually: gitssh init
+4. Add users: gitssh user add
+5. Get help anytime: gitssh help
+6. Test installation: gitssh version"
+    printf "\n"
+    
+    printf "${BOLD}${CYAN}🔧 QUICK ACCESS COMMANDS:${NC}\n"
+    printf "  ${GREEN}•${NC} ${CYAN}gitssh help${NC}          - Complete command reference\n"
+    printf "  ${GREEN}•${NC} ${CYAN}gitssh onboard${NC}       - First-time setup wizard\n"
+    printf "  ${GREEN}•${NC} ${CYAN}gitssh user status${NC}   - Check current status\n"
+    printf "  ${GREEN}•${NC} ${CYAN}gitssh validate${NC}      - Verify installation\n"
+    printf "  ${GREEN}•${NC} ${CYAN}gitssh version${NC}       - Show version info\n"
+    printf "\n"
+}
+
+interactive_install() {
+    show_welcome
+    
+    printf "${BOLD}This installer will set up GitSSH v1.0 CLI tool${NC}\n"
+    printf "Follow along each step as the installer prompts\n"
+    printf "\n"
+    
+    # Show what will be done
+draw_box "WHAT WILL THE INSTALLER DO ?" "1. Detect and validate GitSSH v1.0 files
+2. Check system dependencies (jq, git, ssh)
+3. Install to ~/.local/bin/gitssh/ with modules/ subdirectory
+4. Create symlink ~/.local/bin/gitssh for easy access
+5. Add shell integration with PATH updates
+6. Initialize configuration files
+7. Optional: Set up tab completion
+8. Test CLI functionality"
+    printf "\n"
+    
+    continue_install=$(interactive_prompt "Do you want to continue?" "yes" "Type 'yes' to proceed with installation, or 'no' to cancel")
+    
+    case "$continue_install" in
+        yes|y) 
+            # Continue with installation
+            ;;
+        *) 
+            printf "${YELLOW}Installation cancelled by user${NC}\n"
+            return 0
+            ;;
+    esac
+    
+    printf "\n"
+    printf "${BOLD}${BLUE}Starting GitSSH v1.0 installation...${NC}\n"
+    printf "\n"
+    
+    # Progress tracking
+    total_steps=5
+    current_step=0
+    
+    # Step 1: File detection
+    current_step=$((current_step + 1))
+    progress_bar $current_step $total_steps "Detecting files"
+    if ! detect_modules; then
+        return 1
+    fi
+    
+    # Structure validation
+    if ! validate_module_structure; then
+        log_warning "Structure validation had issues, continuing..."
+    fi
+    
+    # Step 2: Dependencies
+    current_step=$((current_step + 1))
+    progress_bar $current_step $total_steps "Checking dependencies"
+    if ! check_dependencies; then
+        return 1
+    fi
+    
+    # Step 3: System installation
+    current_step=$((current_step + 1))
+    progress_bar $current_step $total_steps "Installing CLI system"
+    if ! install_gitssh_system; then
+        log_error "CLI system installation failed"
+        return 1
+    fi
+    
+    # Step 4: Shell integration
+    current_step=$((current_step + 1))
+    progress_bar $current_step $total_steps "Setting up shell integration"
+    setup_shell_integration
+    
+    # Step 5: System initialization
+    current_step=$((current_step + 1))
+    progress_bar $current_step $total_steps "Initializing system"
+    if ! initialize_system; then
+        log_warning "System initialization had issues, but installation completed"
+        printf "You can run 'gitssh init' manually later\n"
+    fi
+    
+    printf "\n"
+    
+    # Optional tab completion
+    create_completion_support
+    
+    log_success "Installation completed successfully!"
+    printf "\n"
+    
+    # Show CLI reference
+    printf "\n${CYAN}${BOLD}DOCUMENTATION OPTIONS${NC}\n"
+    printf "GitSSH v1.0 includes comprehensive CLI documentation and examples.\n\n"
+    
+    show_functions=$(interactive_prompt "Show complete CLI reference?" "yes" "Type 'yes' to see all available commands, or 'no' to skip")
+    
+    case "$show_functions" in
+        yes|y)
+            printf "\n"
+            show_function_reference
+            ;;
+        *)
+            printf "${BLUE}CLI reference skipped (run 'gitssh help' anytime)${NC}\n"
+            ;;
+    esac
+    
+    # Show usage examples  
+    show_examples=$(interactive_prompt "Show usage examples?" "yes" "Type 'yes' to see practical examples, or 'no' to skip")
+    
+    case "$show_examples" in
+        yes|y)
+            printf "\n"
+            show_usage_examples
+            ;;
+        *)
+            printf "${BLUE}Usage examples skipped (run 'gitssh help' for examples)${NC}\n"
+            ;;
+    esac
+    
+    installation_summary
+    
+    printf "${BOLD}${GREEN}Ready to use! Restart your terminal and run 'gitssh onboard' to get started.${NC}\n"
+}
+
+#================================================================#
+# SYSTEM VERIFICATION
+#================================================================#
+
+verify_installation() {
+    log_info "Verifying GitSSH v1.0 installation integrity"
+    
+    verification_passed=true
+    
+    # Check main installation directory
+    if [ -d "$INSTALL_DIR" ]; then
+        printf "  ${GREEN}✓${NC} Installation directory: ${CYAN}%s${NC}\n" "$INSTALL_DIR"
+    else
+        printf "  ${RED}✗${NC} Installation directory missing: ${RED}%s${NC}\n" "$INSTALL_DIR"
+        verification_passed=false
+    fi
+    
+    # Check modules directory
+    if [ -d "$MODULES_DIR" ]; then
+        printf "  ${GREEN}✓${NC} Modules directory: ${CYAN}%s${NC}\n" "$MODULES_DIR"
+    else
+        printf "  ${RED}✗${NC} Modules directory missing: ${RED}%s${NC}\n" "$MODULES_DIR"
+        verification_passed=false
+    fi
+    
+    # Check main executable
+    if [ -f "$MAIN_SCRIPT" ] && [ -x "$MAIN_SCRIPT" ]; then
+        printf "  ${GREEN}✓${NC} Main executable: ${CYAN}%s${NC}\n" "$MAIN_SCRIPT"
+    else
+        printf "  ${RED}✗${NC} Main executable missing or not executable: ${RED}%s${NC}\n" "$MAIN_SCRIPT"
+        verification_passed=false
+    fi
+    
+    # Check modules
+    module_count=0
+    for module in $REQUIRED_MODULES; do
+        if [ -f "$MODULES_DIR/$module" ]; then
+            module_count=$((module_count + 1))
+        fi
+    done
+    
+    required_count=$(count_words "$REQUIRED_MODULES")
+    if [ "$module_count" -eq "$required_count" ]; then
+        printf "  ${GREEN}✓${NC} Modules installed: ${CYAN}%d/%d${NC}\n" "$module_count" "$required_count"
+    else
+        printf "  ${RED}✗${NC} Modules missing: ${RED}%d/%d${NC}\n" "$module_count" "$required_count"
+        verification_passed=false
+    fi
+    
+    # Check symlink
+    if [ -L "$SYMLINK_PATH" ] && [ -x "$SYMLINK_PATH" ]; then
+        printf "  ${GREEN}✓${NC} Symlink: ${CYAN}%s${NC}\n" "$SYMLINK_PATH"
+    else
+        printf "  ${RED}✗${NC} Symlink missing or broken: ${RED}%s${NC}\n" "$SYMLINK_PATH"
+        verification_passed=false
+    fi
+    
+    # Test basic CLI functionality
+    if [ -x "$MAIN_SCRIPT" ] && "$MAIN_SCRIPT" version >/dev/null 2>&1; then
+        printf "  ${GREEN}✓${NC} CLI responds correctly\n"
+    else
+        printf "  ${RED}✗${NC} CLI not responding\n"
+        verification_passed=false
+    fi
+    
+    # Check configuration files
+    if [ -f "$HOME/.gitssh-users.json" ] || [ -f "$HOME/.gitssh-sessions.json" ]; then
+        printf "  ${GREEN}✓${NC} Configuration files present\n"
+    else
+        printf "  ${YELLOW}⚠${NC} Configuration files missing (run 'gitssh init')\n"
+    fi
+    
+    if [ "$verification_passed" = "true" ]; then
+        log_success "Installation verification passed"
+    else
+        log_error "Installation verification failed"
+        return 1
+    fi
+    
+    printf "\n"
+    return 0
+}
+
+#================================================================#
+# UNINSTALLATION
+#================================================================#
+
+interactive_uninstall() {
+    clear
+    printf "${RED}${BOLD}"
+    cat << 'EOF'
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║                        UNINSTALLER                           ║
+║                                                              ║
+║                    GitSSH v1.0 CLI                           ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+EOF
+    printf "${NC}\n"
+    
+    printf "${YELLOW}${BOLD}This will completely remove GitSSH v1.0 from your system${NC}\n"
+    printf "\n"
+    
+    draw_box "UNINSTALLATION PLAN" "1. Remove main installation directory (~/.local/bin/gitssh/)
+2. Remove symlink (~/.local/bin/gitssh)
+3. Remove shell integrations from config files
+4. Optionally remove configuration files
+5. Clean up PATH modifications
+6. Remove tab completion (if present)"
+    printf "\n"
+    
+    printf "${RED}${BOLD}⚠ WARNING: This action cannot be undone!${NC}\n"
+    printf "\n"
+    
+    confirm_uninstall=$(interactive_prompt "Proceed with uninstallation?" "no" "Type 'yes' to remove GitSSH, or 'no' to cancel")
+    
+    case "$confirm_uninstall" in
+        yes|y)
+            printf "\n${GREEN}Proceeding with uninstallation...${NC}\n"
+            ;;
+        *)  
+            printf "${CYAN}Uninstallation cancelled - GitSSH remains installed${NC}\n"
+            return 0
+            ;;
+    esac
+    
+    printf "\n"
+    log_info "Starting uninstallation..."
+    
+    # Remove main installation directory
+    if [ -d "$INSTALL_DIR" ]; then
+        rm -rf "$INSTALL_DIR"
+        log_success "Removed installation directory: $INSTALL_DIR"
+    else
+        log_warning "Installation directory not found: $INSTALL_DIR"
+    fi
+    
+    # Remove symlink
+    if [ -L "$SYMLINK_PATH" ]; then
+        rm "$SYMLINK_PATH"
+        log_success "Removed symlink: $SYMLINK_PATH"
+    else
+        log_info "Symlink not found: $SYMLINK_PATH"
+    fi
+    
+    # Remove shell integrations
+    shell_configs="$HOME/.bashrc $HOME/.zshrc $HOME/.profile"
+    files_modified=0
+    
+    for config_file in $shell_configs; do
+        if [ -f "$config_file" ] && grep -q "GitSSH.*Integration\|GitSSH.*CLI" "$config_file"; then
+            # Create backup
+            backup_name="${config_file}.backup-$(date +%Y%m%d-%H%M%S)"
+            cp "$config_file" "$backup_name"
+            
+            # Remove integration blocks
+            sed -i '/# GitSSH.*Integration/,+10d' "$config_file" 2>/dev/null || true
+            sed -i '/# Git-SSH Manager Integration/,+5d' "$config_file" 2>/dev/null || true
+            
+            config_name=$(basename "$config_file")
+            log_success "Removed integration from $config_name"
+            printf "  ${BLUE}ℹ${NC}  Backup created: %s\n" "$backup_name"
+            files_modified=$((files_modified + 1))
+        fi
+    done
+    
+    if [ $files_modified -eq 0 ]; then
+        log_info "No shell integrations found to remove"
+    fi
+    
+    # Ask about configuration files
+    printf "\n"
+    draw_box "CONFIGURATION FILES" "The following files contain your user settings and sessions:
+~/.gitssh-sessions.json (repository mappings)
+~/.gitssh-users.json (user configurations)
+
+These files are safe to keep if you plan to reinstall later.
+They contain no sensitive information (just email/name mappings)."
+    printf "\n"
+    
+    remove_config=$(interactive_prompt "Remove your configuration files?" "no" "Type 'yes' to delete configs, or 'no' to keep them")
+    
+    case "$remove_config" in
+        yes|y)
+            # Create backup before removal
+            backup_dir="$HOME/.gitssh-backup-$(date +%Y%m%d-%H%M%S)"
+            mkdir -p "$backup_dir"
+            
+            for config in "$HOME/.gitssh-sessions.json" "$HOME/.gitssh-users.json"; do
+                if [ -f "$config" ]; then
+                    cp "$config" "$backup_dir/"
+                    rm "$config"
+                fi
+            done
+            
+            log_success "Configuration files removed"
+            printf "  ${BLUE}ℹ${NC}  Backup created: ${CYAN}%s${NC}\n" "$backup_dir"
+            ;;
+        *)
+            log_info "Configuration files preserved"
+            ;;
+    esac
+    
+    printf "\n"
+    log_success "Uninstallation complete!"
+    printf "${CYAN}Please restart your terminal or run: ${BOLD}source ~/.bashrc${NC}\n"
+    printf "${BLUE}Thank you for using GitSSH!${NC}\n"
+}
+
+#================================================================#
+# UPDATE/UPGRADE FUNCTIONALITY
+#================================================================#
+
+interactive_update() {
+    log_info "Checking for existing GitSSH installation"
+    
+    if [ ! -d "$INSTALL_DIR" ] && [ ! -L "$SYMLINK_PATH" ]; then
+        log_error "No existing GitSSH installation found"
+        printf "Run '%s install' to install GitSSH v1.0\n" "$0"
+        return 1
+    fi
+    
+    printf "${YELLOW}${BOLD}UPDATE MODE${NC}\n"
+    printf "This will update your existing GitSSH installation to v1.0.\n"
+    printf "\n"
+    
+    # Backup existing installation
+    backup_dir="$HOME/.gitssh-backup-$(date +%Y%m%d-%H%M%S)"
+    log_info "Creating backup: $backup_dir"
+    
+    mkdir -p "$backup_dir"
+    if [ -d "$INSTALL_DIR" ]; then
+        cp -r "$INSTALL_DIR" "$backup_dir/"
+    fi
+    
+    # Backup configurations
+    for config in "$HOME/.gitssh-sessions.json" "$HOME/.gitssh-users.json"; do
+        if [ -f "$config" ]; then
+            cp "$config" "$backup_dir/"
+        fi
+    done
+    
+    printf "  ${GREEN}✓${NC} Backup created: ${CYAN}%s${NC}\n" "$backup_dir"
+    printf "\n"
+    
+    # Proceed with installation (will overwrite existing)
+    interactive_install
+    
+    printf "\n"
+    log_success "Update complete! Your configurations and user data were preserved."
+    printf "${BLUE}Note: Configuration files may need migration to v1.0 format.${NC}\n"
+    printf "${BLUE}Run 'gitssh config migrate' if you encounter issues.${NC}\n"
+}
+
+#================================================================#
+# DIAGNOSTIC MODE
+#================================================================#
+
+run_diagnostics() {
+    printf "${BOLD}${BLUE}🔍 GitSSH v1.0 SYSTEM DIAGNOSTICS${NC}\n"
+    printf "${BLUE}"
+    repeat_char '=' 80
+    printf "${NC}\n\n"
+    
+    # Check installation
+    log_info "Checking installation status"
+    
+    install_status="Not Installed"
+    install_health="Unknown"
+    
+    if [ -d "$INSTALL_DIR" ]; then
+        module_count=$(find "$MODULES_DIR" -name "gitssh-*.sh" 2>/dev/null | wc -l)
+        install_status="Installed ($module_count modules)"
+        
+        if [ -f "$MAIN_SCRIPT" ] && [ -x "$MAIN_SCRIPT" ] && "$MAIN_SCRIPT" version >/dev/null 2>&1; then
+            install_health="Healthy"
+            version_info=$("$MAIN_SCRIPT" version 2>/dev/null)
+            printf "  Version: ${CYAN}%s${NC}\n" "$version_info"
+        else
+            install_health="Damaged"
+        fi
+    fi
+    
+    printf "  Installation: ${CYAN}%s${NC}\n" "$install_status"
+    printf "  Health: ${CYAN}%s${NC}\n" "$install_health"
+    printf "\n"
+    
+    # Check dependencies
+    log_info "Checking dependencies"
+    check_dependencies || true
+    
+    # Check shell integration
+    log_info "Checking shell integration"
+    shell_configs="$HOME/.bashrc $HOME/.zshrc $HOME/.profile"
+    integrated_shells=""
+    
+    for config_file in $shell_configs; do
+        if [ -f "$config_file" ] && grep -q "GitSSH.*Integration\|GitSSH.*CLI" "$config_file" 2>/dev/null; then
+            config_name=$(basename "$config_file")
+            integrated_shells="$integrated_shells $config_name"
+        fi
+    done
+    
+    integrated_count=$(count_words "$integrated_shells")
+    if [ $integrated_count -gt 0 ]; then
+        printf "  ${GREEN}✓${NC} Shell integration: ${CYAN}%s${NC}\n" "$integrated_shells"
+    else
+        printf "  ${YELLOW}⚠${NC} No shell integration found\n"
+    fi
+    
+    # Check PATH
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*)
+            printf "  ${GREEN}✓${NC} PATH includes ~/.local/bin\n"
+            ;;
+        *)
+            printf "  ${YELLOW}⚠${NC} ~/.local/bin not in PATH\n"
+            ;;
+    esac
+    
+    # Check symlink
+    if [ -L "$SYMLINK_PATH" ]; then
+        printf "  ${GREEN}✓${NC} Command symlink exists and points to: $(readlink "$SYMLINK_PATH")\n"
+    else
+        printf "  ${YELLOW}⚠${NC} Command symlink missing: $SYMLINK_PATH\n"
+    fi
+    
+    printf "\n"
+    
+    # Test functionality if installed
+    if [ "$install_health" = "Healthy" ]; then
+        log_info "Testing functionality"
+        
+        # Test basic commands
+        test_commands="help version user session ssh"
+        for cmd in $test_commands; do
+            if "$MAIN_SCRIPT" "$cmd" --help >/dev/null 2>&1; then
+                printf "  ${GREEN}✓${NC} Command 'gitssh %s' works\n" "$cmd"
+            else
+                printf "  ${RED}✗${NC} Command 'gitssh %s' failed\n" "$cmd"
+            fi
+        done
+        
+        # Test configuration files
+        if [ -f "$HOME/.gitssh-sessions.json" ]; then
+            printf "  ${GREEN}✓${NC} Sessions config exists\n"
+        else
+            printf "  ${YELLOW}⚠${NC} Sessions config not found\n"
+        fi
+        
+        if [ -f "$HOME/.gitssh-users.json" ]; then
+            printf "  ${GREEN}✓${NC} Users config exists\n"
+        else
+            printf "  ${YELLOW}⚠${NC} Users config not found\n"
+        fi
+        
+        # Test tab completion
+        if [ -f "$INSTALL_DIR/completion.sh" ]; then
+            printf "  ${GREEN}✓${NC} Tab completion available\n"
+        else
+            printf "  ${YELLOW}⚠${NC} Tab completion not installed\n"
+        fi
+    fi
+    
+    printf "\n"
+    log_info "Diagnostic complete"
+    
+    if [ "$install_health" = "Healthy" ]; then
+        printf "${GREEN}GitSSH v1.0 is working correctly!${NC}\n"
+        printf "Try: ${CYAN}gitssh help${NC} or ${CYAN}gitssh onboard${NC}\n"
+    elif [ "$install_health" = "Damaged" ]; then
+        printf "${RED}GitSSH installation appears damaged.${NC}\n"
+        printf "Try: ${CYAN}%s update${NC}\n" "$0"
+    else
+        printf "${YELLOW}GitSSH is not installed.${NC}\n"
+        printf "Try: ${CYAN}%s install${NC}\n" "$0"
+    fi
+}
+
+#================================================================#
+# MAIN INSTALLER LOGIC
+#================================================================#
+
+show_usage() {
+    printf "${BOLD}GitSSH v1.0 CLI Installer${NC}\n"
+    printf "\n"
+    printf "${CYAN}Usage:${NC} %s [command]\n" "$0"
+    printf "\n"
+    printf "${CYAN}Commands:${NC}\n"
+    printf "  install     - Install GitSSH v1.0 CLI tool (default)\n"
+    printf "  update      - Update existing installation\n"
+    printf "  uninstall   - Remove GitSSH completely\n"
+    printf "  verify      - Verify installation integrity\n"
+    printf "  diagnose    - Run system diagnostics\n"
+    printf "  help        - Show this help message\n"
+    printf "\n"
+    printf "${CYAN}GitSSH v1.0 Features:${NC}\n"
+    printf "  • Modern CLI interface: gitssh <command> <subcommand>\n"
+    printf "  • Clean modular architecture with no backward compatibility\n"
+    printf "  • Enhanced SSH setup wizards for GitHub/GitLab\n"
+    printf "  • Comprehensive diagnostics and repair tools\n"
+    printf "  • Tab completion support\n"
+    printf "  • Interactive installation with progress tracking\n"
+    printf "  • Robust configuration management\n"
+    printf "\n"
+    printf "${CYAN}Expected Project Structure:${NC}\n"
+    printf "  gitssh                  (main CLI executable)\n"
+    printf "  install                 (this installer)\n"
+    printf "  modules/                (modules directory)\n"
+    for module in $REQUIRED_MODULES; do
+        printf "    ├── %s\n" "$module"
+    done
+    printf "\n"
+    printf "${CYAN}Installation Target:${NC}\n"
+    printf "  ~/.local/bin/gitssh/    (installation directory)\n"
+    printf "  ~/.local/bin/gitssh     (command symlink)\n"
+}
+
+main() {
+    command="${1:-install}"
+    
+    case "$command" in
+        "install")
+            interactive_install
+            ;;
+            
+        "update"|"upgrade")
+            interactive_update
+            ;;
+            
+        "uninstall"|"remove")
+            interactive_uninstall
+            ;;
+            
+        "verify"|"test")
+            if verify_installation; then
+                log_success "Installation is working correctly"
+                
+                # Quick functionality test
+                if [ -x "$MAIN_SCRIPT" ]; then
+                    printf "${CYAN}Try running:${NC} gitssh help\n"
+                fi
+            else
+                log_error "Installation verification failed"
+                printf "${YELLOW}Consider running:${NC} %s update\n" "$0"
+                return 1
+            fi
+            ;;
+            
+        "diagnose"|"diag"|"doctor")
+            run_diagnostics
+            ;;
+            
+        "help"|"--help"|"-h")
+            show_usage
+            ;;
+            
+        *)
+            log_error "Unknown command: $command"
+            printf "\n"
+            show_usage
+            return 1
+            ;;
+    esac
+}
+
+# Cleanup on exit
+trap 'rm -rf "$TEMP_DIR"' EXIT INT TERM
+
+# Pre-flight checks
+if [ ! -t 0 ]; then
+    log_error "This installer requires an interactive terminal"
+    exit 1
+fi
+
+# Ensure we're running from the correct directory with expected structure
+if [ ! -f "gitssh" ]; then
+    log_error "Main executable 'gitssh' not found in current directory"
+    printf "Please run this installer from the project root directory.\n"
+    printf "\n"
+    show_usage
+    exit 1
+fi
+
+if [ ! -d "modules" ]; then
+    log_error "Modules directory not found"
+    printf "Please ensure the 'modules/' directory exists with GitSSH modules.\n"
+    printf "\n"
+    show_usage
+    exit 1
+fi
+
+# Run main function
+main "$@"
