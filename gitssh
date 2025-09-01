@@ -356,11 +356,12 @@ _show_main_help() {
 ║           ██╔════╝ ██╗ ██╗ ██╔════╝██╔════╝██║  ██║           ║
 ║           ██║  ███╗══╝████║███████╗███████╗███████║           ║
 ║           ██║   ██║██║ ██║ ╚════██║╚════██║██╔══██║           ║
-║           ██████╔╝ ██║ ██║ ███████║███████║██║  ██║           ║
-║           ╚═════╝  ╚═╝ ╚═╝ ╚══════╝╚══════╝╚═╝  ╚═╝v1.0-Oz    ║
+║            ██████╔╝██║ ██║ ███████║███████║██║  ██║           ║
+║            ╚═════╝ ╚═╝ ╚═╝ ╚══════╝╚══════╝╚═╝  ╚═╝v1.0-Oz    ║
 ║                     <-POSIX Compatible->                      ║
-║ Multi Git,GitHub,GitLab and SSH account management with ease! ║
+║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
+Manage multiple Git, GitHub & GitLab SSH account seesions with ease! 
 
 GitSSH v1.0 - Multi Git,GitHub,GitLab and SSH account management with ease!
 
