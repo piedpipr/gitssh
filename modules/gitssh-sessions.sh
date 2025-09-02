@@ -126,7 +126,7 @@ session_set() {
         fi
         _apply_configured_user "$repo_id" "$target_user"
     else
-        # Interactive mode (keep existing git_user logic)
+        # Interactive mode (keep existing session_set logic)
         _interactive_user_selection "$repo_id"
     fi
 }
@@ -160,7 +160,7 @@ _git_auto_prompt() {
         read -r use_saved
         case "$use_saved" in
             [Nn]*)
-                git_user
+                session_set
                 ;;
             *)
                 _print_success "Applied saved configuration"
@@ -206,7 +206,7 @@ _git_auto_prompt() {
             
             # Suggest matching user if available
             if _check_dependencies 2>/dev/null && _user_exists "$remote_user"; then
-                _print_info "You have '$remote_user' configured - use 'git_user' to switch"
+                _print_info "You have '$remote_user' configured - use 'session_set' to switch"
             fi
         fi
         
@@ -215,7 +215,7 @@ _git_auto_prompt() {
         read -r keep_user
         case "$keep_user" in
             [Nn]*)
-                git_user
+                session_set
                 ;;
             *)
                 user_info="$current_name <$current_email>"
@@ -227,7 +227,7 @@ _git_auto_prompt() {
     else
         printf "No git user configured for this repository\n"
         printf "Setting up user configuration...\n"
-        git_user
+        session_set
     fi
     printf "\n"
 }
@@ -381,6 +381,136 @@ _get_session_stats() {
     fi
     
     printf "active:%d,invalid:%d" "$active_repos" "$invalid_repos"
+}
+_interactive_user_selection() {
+    repo_id="$1"
+    
+    printf "\nSelect Git User Configuration:\n"
+    printf "=============================\n"
+    
+    # Check if we have configured users
+    if _check_dependencies 2>/dev/null && [ -f "$GIT_SSH_USERS_FILE" ]; then
+        users=$(_get_configured_users)
+        
+        if [ -n "$users" ]; then
+            printf "Configured users:\n"
+            
+            # Convert users to a numbered list without subshell
+            user_list=""
+            i=1
+            for username in $users; do
+                user_details=$(_get_user_details "$username")
+                name=$(printf "%s" "$user_details" | jq -r '.name')
+                email=$(printf "%s" "$user_details" | jq -r '.email')
+                printf "  %d. %s <%s>\n" "$i" "$name" "$email"
+                user_list="$user_list $username"
+                i=$((i + 1))
+            done
+            
+            printf "  c. Enter custom user\n"
+            user_count=$((i - 1))
+            printf "\nSelect option (1-%d, c): " "$user_count"
+            read -r choice
+            
+            case "$choice" in
+                [0-9]*)
+                    # Convert choice to username
+                    selected_user=""
+                    current_i=1
+                    for username in $users; do
+                        if [ "$current_i" -eq "$choice" ]; then
+                            selected_user="$username"
+                            break
+                        fi
+                        current_i=$((current_i + 1))
+                    done
+                    
+                    if [ -n "$selected_user" ] && _user_exists "$selected_user"; then
+                        _apply_configured_user "$repo_id" "$selected_user"
+                        return 0
+                    else
+                        _print_error "Invalid selection"
+                        return 1
+                    fi
+                    ;;
+                [Cc]*)
+                    _handle_custom_user_input "$repo_id"
+                    ;;
+                *)
+                    _print_error "Invalid option"
+                    return 1
+                    ;;
+            esac
+        else
+            printf "No configured users found\n"
+            _handle_custom_user_input "$repo_id"
+        fi
+    else
+        printf "User management not available (jq not found)\n"
+        _handle_custom_user_input "$repo_id"
+    fi
+}
+
+# Show basic session information
+_show_basic_session_info() {
+    repo_id=$(_get_repo_id)
+    
+    if [ -n "$repo_id" ]; then
+        printf "Current Repository: %s\n" "$(basename "$repo_id")"
+        
+        # Show session user
+        session_user=$(_get_session_user "$repo_id")
+        if [ -n "$session_user" ]; then
+            printf "Session User: %s\n" "$session_user"
+        else
+            printf "Session User: (not set)\n"
+        fi
+        
+        # Show current git config
+        current_user=$(_get_effective_git_user)
+        printf "Git Config: %s\n" "$current_user"
+        
+        # Show remote info
+        remote_url=$(_get_remote_url)
+        if [ -n "$remote_url" ]; then
+            printf "Remote: %s\n" "$remote_url"
+            remote_user=$(_extract_username_from_remote "$remote_url")
+            [ -n "$remote_user" ] && printf "Remote User: %s\n" "$remote_user"
+        fi
+    else
+        printf "Not in a git repository\n"
+    fi
+}
+
+# Show detailed session information
+_show_detailed_session_info() {
+    _show_basic_session_info
+    
+    printf "\nSession Statistics:\n"
+    stats=$(_get_session_stats)
+    active=$(printf "%s" "$stats" | cut -d',' -f1 | cut -d':' -f2)
+    invalid=$(printf "%s" "$stats" | cut -d',' -f2 | cut -d':' -f2)
+    
+    printf "Active repositories: %s\n" "$active"
+    if [ "$invalid" -gt 0 ]; then
+        printf "Invalid entries: %s\n" "$invalid"
+    fi
+    
+    # Show configured users
+    if _check_dependencies 2>/dev/null; then
+        printf "\nConfigured Users:\n"
+        users=$(_get_configured_users)
+        if [ -n "$users" ]; then
+            printf "%s" "$users" | while read -r username; do
+                user_details=$(_get_user_details "$username")
+                name=$(printf "%s" "$user_details" | jq -r '.name')
+                email=$(printf "%s" "$user_details" | jq -r '.email')
+                printf "  %s: %s <%s>\n" "$username" "$name" "$email"
+            done
+        else
+            printf "  (none configured)\n"
+        fi
+    fi
 }
 
 #================================================================#

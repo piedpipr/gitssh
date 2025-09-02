@@ -176,7 +176,7 @@ git_commit() {
     # Check if user is configured in session
     if ! _has_session_user "$repo_id"; then
         _print_warning "No user set for this repository"
-        git_user
+        session_set
         printf "\n"
     fi
 
@@ -217,7 +217,7 @@ git_push() {
     # Check if user is configured in session
     if ! _has_session_user "$repo_id"; then
         _print_warning "No user set for this repository"
-        git_user
+        session_set
         printf "\n"
     fi
 
@@ -547,7 +547,7 @@ git_analyze() {
     
     if [ -z "$current_name" ] || [ -z "$current_email" ]; then
         _print_warning "  Issue: Incomplete user configuration"
-        printf "  Fix: Run 'git_user' to configure\n"
+        printf "  Fix: Run 'session_set' to configure\n"
         issues_found=$((issues_found + 1))
     fi
 
@@ -568,7 +568,7 @@ git_analyze() {
         remote_user=$(_extract_username_from_remote "$origin_url")
         if [ -n "$remote_user" ] && [ -n "$current_name" ] && [ "$remote_user" != "$current_name" ]; then
             _print_warning "  Issue: User mismatch (git: $current_name, remote: $remote_user)"
-            printf "  Fix: Use 'git_user' to select correct user\n"
+            printf "  Fix: Use 'session_set' to select correct user\n"
             issues_found=$((issues_found + 1))
         fi
     else
