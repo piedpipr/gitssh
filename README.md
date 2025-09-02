@@ -1,4 +1,4 @@
-
+(This is currently in pre-release stage, contributions by testing, reporting and bug-fixing are much appreciated)
 # GitSSH
 ```
 ╔═══════════════════════════════════════════════════════════════╗
