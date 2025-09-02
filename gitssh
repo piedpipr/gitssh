@@ -460,7 +460,7 @@ _show_main_help() {
 ║           ██║   ██║██║ ██║ ╚════██║╚════██║██╔══██║           ║
 ║            ██████╔╝██║ ██║ ███████║███████║██║  ██║           ║
 ║            ╚═════╝ ╚═╝ ╚═╝ ╚══════╝╚══════╝╚═╝  ╚═╝v1.0-Oz    ║
-║                     <-POSIX Compatible->                      ║
+║                     <-POSIX Compliant->                      ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 Manage multiple Git, GitHub & GitLab SSH account seesions with ease! 

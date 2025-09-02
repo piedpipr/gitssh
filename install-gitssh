@@ -3,7 +3,7 @@
 #================================================================#
 # GitSSH Auto-Installer
 # Automatically clones and installs GitSSH from GitHub
-# POSIX Compatible - Fixed for curl | sh usage
+# POSIX Compliant - Fixed for curl | sh usage
 #================================================================#
 
 set -e  # Exit on any error
@@ -27,7 +27,7 @@ show_banner() {
 ║           ██║   ██║██║ ██║ ╚════██║╚════██║██╔══██║           ║
 ║            ██████╔╝██║ ██║ ███████║███████║██║  ██║           ║
 ║            ╚═════╝ ╚═╝ ╚═╝ ╚══════╝╚══════╝╚═╝  ╚═╝v1.0-Oz    ║
-║                     <-POSIX Compatible->                      ║
+║                     <-POSIX Compliant->                      ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 Manage multiple Git, GitHub & GitLab SSH account seesions with ease! 
@@ -118,7 +118,7 @@ check_dependencies() {
     fi
 }
 
-# POSIX compatible sleep alternative using read with timeout where available
+# POSIX Compliant sleep alternative using read with timeout where available
 posix_sleep() {
     duration="$1"
     # Try different sleep methods
@@ -128,7 +128,7 @@ posix_sleep() {
         # Use ping as timer (works on most systems)
         ping -c 1 -W "${duration}000" 127.0.0.1 >/dev/null 2>&1 || true
     else
-        # Fallback: busy wait (not ideal but POSIX compatible)
+        # Fallback: busy wait (not ideal but POSIX Compliant)
         start_time=$(date +%s)
         while [ $(($(date +%s) - start_time)) -lt "$duration" ]; do
             continue

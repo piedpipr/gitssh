@@ -2,7 +2,7 @@
 
 #================================================================#
 # GitSSH v1.0 INSTALLER - Updated for New Structure
-# Enhanced installer for modular POSIX compatible CLI tool
+# Enhanced installer for modular POSIX Compliant CLI tool
 #================================================================#
 
 set -e  # Exit on any error
@@ -17,7 +17,7 @@ TEMP_DIR="${TMPDIR:-/tmp}/gitssh-installer-$$"
 # Required module files for the modular system
 REQUIRED_MODULES="gitssh-utils.sh gitssh-users.sh gitssh-sessions.sh gitssh-remotes.sh gitssh-commands.sh gitssh-init.sh gitssh-setup.sh"
 
-# Colors for output (POSIX compatible)
+# Colors for output (POSIX Compliant)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -45,7 +45,7 @@ log_warning() { printf "${YELLOW}${BOLD}[WARNING]${NC} %s\n" "$1"; }
 log_error() { printf "${RED}${BOLD}[ERROR]${NC} %s\n" "$1"; }
 log_step() { printf "${CYAN}${BOLD}[STEP %s]${NC} %s\n" "$1" "$2"; }
 
-# String length function (POSIX compatible)
+# String length function (POSIX Compliant)
 str_length() {
     printf "%s" "$1" | wc -c | tr -d ' '
 }
@@ -167,7 +167,7 @@ show_welcome() {
 ║           ██║   ██║██║ ██║ ╚════██║╚════██║██╔══██║           ║
 ║            ██████╔╝██║ ██║ ███████║███████║██║  ██║           ║
 ║            ╚═════╝ ╚═╝ ╚═╝ ╚══════╝╚══════╝╚═╝  ╚═╝v1.0-Oz    ║
-║                     <-POSIX Compatible->                      ║
+║                     <-POSIX Compliant->                      ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 Manage multiple Git, GitHub & GitLab SSH account seesions with ease! 
