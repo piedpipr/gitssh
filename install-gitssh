@@ -214,26 +214,15 @@ main() {
     # Clear the trap before running installer (so installer can manage its own cleanup)
     trap - INT TERM
     
-    # Execute the install script
-    if ./install; then
-        printf "\n"
-        log_success "GitSSH installation completed successfully!"
-        log_info "You can now use 'gitssh' command from anywhere in your terminal."
-        printf "\n"
-        printf "\033[0;32mTo get started, try:\033[0m\n"
-        printf "  \033[0;36mgitssh --help\033[0m     # Show help\n"
-        printf "  \033[0;36mgitssh onboard\033[0m    # First-time setup wizard\n"
-        printf "  \033[0;36mgitssh user add\033[0m   # Add a new SSH user\n"
-        
-        # Clean up only after successful installation
-        cleanup_final
-    else
-        printf "\n"
-        log_error "Installation failed!"
-        log_error "Please check the error messages above and try again."
-        cleanup_on_error
-        exit 1
-    fi
+    # Execute the install script with proper terminal handling
+    # The installer checks for interactive terminal, so we need to ensure it has one
+    # Use exec to replace the current process and maintain terminal connection
+    log_info "Launching GitSSH installer..."
+    printf "\n"
+    
+    # Replace current process with installer to maintain terminal connection
+    # This transfers control completely to the installer
+    exec ./install
 }
 
 #================================================================#
