@@ -343,7 +343,95 @@ _handle_config_commands() {
             ;;
     esac
 }
+#================================================================#
+# INSTALLATION COMMAND HANDLERS
+#================================================================#
 
+_handle_install_commands() {
+    subcommand="$1"
+    shift
+    
+    # Find the installer script
+    installer_script=""
+    
+    # Check common locations for installer
+    if [ -f "$SCRIPT_DIR/install" ]; then
+        installer_script="$SCRIPT_DIR/install"
+    elif [ -f "$INSTALL_DIR/install" ]; then
+        installer_script="$INSTALL_DIR/install"
+    elif [ -f "$(dirname "$0")/install" ]; then
+        installer_script="$(dirname "$0")/install"
+    else
+        printf "Error: Installer script not found\n" >&2
+        printf "Looked in:\n" >&2
+        printf "  - %s/install\n" "$SCRIPT_DIR" >&2
+        printf "  - %s/install\n" "$INSTALL_DIR" >&2
+        printf "  - %s/install\n" "$(dirname "$0")" >&2
+        return 1
+    fi
+    
+    # Make sure installer is executable
+    if [ ! -x "$installer_script" ]; then
+        chmod +x "$installer_script" 2>/dev/null || {
+            printf "Error: Cannot execute installer script: %s\n" "$installer_script" >&2
+            return 1
+        }
+    fi
+    
+    case "$subcommand" in
+        install|reinstall)
+            printf "Running GitSSH installer...\n"
+            exec "$installer_script" install "$@"
+            ;;
+        uninstall|remove)
+            printf "Running GitSSH uninstaller...\n"
+            exec "$installer_script" uninstall "$@"
+            ;;
+        update|upgrade)
+            printf "Running GitSSH updater...\n"
+            exec "$installer_script" update "$@"
+            ;;
+        verify|test-install)
+            printf "Verifying GitSSH installation...\n"
+            exec "$installer_script" verify "$@"
+            ;;
+        diagnose|doctor-install)
+            printf "Running installation diagnostics...\n"
+            exec "$installer_script" diagnose "$@"
+            ;;
+        *)
+            printf "Error: Unknown install command '%s'\n" "$subcommand" >&2
+            _show_install_help
+            return 1
+            ;;
+    esac
+}
+
+_show_install_help() {
+    cat << 'EOF'
+INSTALLATION MANAGEMENT:
+
+    gitssh install install        Reinstall GitSSH system
+    gitssh install uninstall      Completely remove GitSSH
+    gitssh install update         Update to latest version
+    gitssh install verify         Verify installation integrity
+    gitssh install diagnose       Run installation diagnostics
+
+INSTALLATION SHORTCUTS (aliases):
+    gitssh reinstall              Same as 'install install'
+    gitssh uninstall              Same as 'install uninstall' 
+    gitssh update                 Same as 'install update'
+    gitssh verify                 Same as 'install verify'
+    gitssh diagnose               Same as 'install diagnose'
+
+EXAMPLES:
+    gitssh verify                 # Check if installation is healthy
+    gitssh update                 # Update GitSSH installation  
+    gitssh uninstall              # Remove GitSSH completely
+    gitssh install verify         # Alternative full syntax
+
+EOF
+}
 #================================================================#
 # HELP FUNCTIONS
 #================================================================#
@@ -415,6 +503,13 @@ CONFIGURATION:
     config reset            Reset configuration to defaults
     config backup           Backup configuration files
     config restore <path>   Restore from backup
+
+INSTALLATION/UNINSTALLATION/UPDATE MANAGEMENT:
+    gitssh reinstall                   Reinstall GitSSH system
+    gitssh uninstall                   Completely remove GitSSH
+    gitssh update                      Update to latest version
+    gitssh verify                      Verify installation integrity
+    gitssh diagnose                    Run installation diagnostics
 
 INFORMATION:
     help [command]          Show help (general or command-specific)
@@ -835,7 +930,34 @@ _route_command() {
         version|--version|-v)
             printf "%s v%s\n" "$GITSSH_NAME" "$GITSSH_VERSION"
             ;;
+
+        # Installation management
+        install)
+            if [ $# -eq 0 ]; then
+                printf "Error: Install command required\n" >&2
+                _show_install_help
+                return 1
+            fi
+            _handle_install_commands "$@"
+            ;;
             
+        # Direct aliases for installation commands (without "install" prefix)
+        reinstall)
+            _handle_install_commands "install" "$@"
+            ;;
+        uninstall|remove)
+            _handle_install_commands "uninstall" "$@"
+            ;;
+        update|upgrade)
+            _handle_install_commands "update" "$@"
+            ;;
+        verify|test-install)
+            _handle_install_commands "verify" "$@"
+            ;;
+        diagnose|doctor-install)
+            _handle_install_commands "diagnose" "$@"
+            ;; 
+
         # Handle unknown commands
         *)
             printf "Error: Unknown command '%s'\n" "$command" >&2
