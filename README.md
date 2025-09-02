@@ -77,7 +77,7 @@ GitSSH keeps track of which account is active, sets the right SSH key, updates y
 ### Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/piedpipr/gitssh/main/install-gitssh.sh | sh
+curl -fsSL https://raw.githubusercontent.com/piedpipr/gitssh/refs/heads/main/install-gitssh | sh
 ```
 
 ### Manual
