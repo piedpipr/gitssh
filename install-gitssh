@@ -3,7 +3,7 @@
 #================================================================#
 # GitSSH Auto-Installer
 # Automatically clones and installs GitSSH from GitHub
-# POSIX Compatible
+# POSIX Compatible - Works with both direct execution and curl|sh
 #================================================================#
 
 set -e  # Exit on any error
@@ -118,17 +118,14 @@ check_dependencies() {
     fi
 }
 
-# POSIX compatible sleep alternative using read with timeout where available
+# POSIX compatible sleep alternative
 posix_sleep() {
     duration="$1"
-    # Try different sleep methods
     if command -v sleep >/dev/null 2>&1; then
         sleep "$duration"
     elif command -v ping >/dev/null 2>&1; then
-        # Use ping as timer (works on most systems)
         ping -c 1 -W "${duration}000" 127.0.0.1 >/dev/null 2>&1 || true
     else
-        # Fallback: busy wait (not ideal but POSIX compatible)
         start_time=$(date +%s)
         while [ $(($(date +%s) - start_time)) -lt "$duration" ]; do
             continue
@@ -136,35 +133,151 @@ posix_sleep() {
     fi
 }
 
+# Detect if running via curl|sh
+is_piped_execution() {
+    # Check if stdin is not a terminal (typical for curl|sh)
+    [ ! -t 0 ]
+}
+
+# Smart user input - works in both piped and direct execution
+smart_read() {
+    prompt="$1"
+    default="$2"
+    
+    if is_piped_execution; then
+        # Running via curl|sh - use default without prompting
+        if [ -n "$default" ]; then
+            printf "%s" "$default"
+            return 0
+        else
+            # No default available, assume 'yes' for critical prompts
+            printf "yes"
+            return 0
+        fi
+    else
+        # Direct execution - prompt user normally
+        if [ -n "$default" ]; then
+            printf "%s [%s]: " "$prompt" "$default" >&2
+        else
+            printf "%s: " "$prompt" >&2
+        fi
+        
+        if command -v read >/dev/null 2>&1; then
+            read response < /dev/tty
+        else
+            response=$(head -n 1 < /dev/tty)
+        fi
+        
+        if [ -z "$response" ]; then
+            response="$default"
+        fi
+        
+        printf "%s" "$response"
+    fi
+}
+
+# Create a modified installer that works in both contexts
+create_compatible_installer() {
+    log_info "Creating installation wrapper..."
+    
+    # Create a wrapper script that handles both execution modes
+    cat > install-wrapper << 'WRAPPER_EOF'
+#!/bin/sh
+
+# GitSSH Installation Wrapper
+# Handles both direct execution and curl|sh execution
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log_info() { printf "${BLUE}[INFO]${NC} %s\n" "$1"; }
+log_success() { printf "${GREEN}[SUCCESS]${NC} %s\n" "$1"; }
+log_error() { printf "${RED}[ERROR]${NC} %s\n" "$1" >&2; }
+
+# Detect execution context
+is_piped() { [ ! -t 0 ]; }
+
+# Main installation function
+run_installer() {
+    if is_piped; then
+        log_info "Detected curl|sh execution - running in automated mode"
+        # Run installer with automatic 'yes' responses
+        printf "install\n" | ./install 2>/dev/null || ./install install 2>/dev/null || {
+            log_info "Trying interactive installation..."
+            # Create expect-like behavior using printf
+            (
+                sleep 1
+                printf "\n"  # Press enter for continuation prompts
+                sleep 2
+                printf "yes\n"  # Answer yes to setup questions
+                sleep 2
+                printf "1\n"    # Choose option 1 (GitHub setup)
+                sleep 10
+                printf "\n"     # Continue through any other prompts
+            ) | ./install &
+            wait
+        }
+    else
+        log_info "Detected direct execution - running in interactive mode"
+        # Run installer normally
+        ./install
+    fi
+}
+
+# Execute installation
+run_installer
+
+WRAPPER_EOF
+
+    chmod +x install-wrapper
+    log_info "Installation wrapper created"
+}
+
 #================================================================#
 # MAIN INSTALLATION PROCESS
 #================================================================#
 
 main() {
-    # Set up cleanup trap ONLY for errors and interrupts (not normal exit)
+    # Set up cleanup trap
     trap cleanup_on_error INT TERM
     
     # Show banner
     show_banner
     
+    # Detect execution mode
+    if is_piped_execution; then
+        log_info "Detected curl|sh execution - automated installation mode"
+        printf "\n"
+    else
+        log_info "Detected direct execution - interactive installation mode"
+        printf "\n"
+    fi
+    
     # Check dependencies
     log_info "Checking system dependencies..."
     check_dependencies
-    show_progress 1 6 "Dependencies checked"
+    show_progress 1 7 "Dependencies checked"
     posix_sleep 1
     
     # Create temporary directory
     log_info "Creating temporary directory..."
     mkdir -p "$TEMP_DIR"
-    show_progress 2 6 "Temporary directory created"
+    show_progress 2 7 "Temporary directory created"
     posix_sleep 1
     
     # Clone repository
     log_info "Cloning GitSSH repository..."
     if git clone "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1; then
-        show_progress 3 6 "Repository cloned successfully"
+        show_progress 3 7 "Repository cloned successfully"
     else
-        show_progress 3 6 "Repository clone failed"
+        show_progress 3 7 "Repository clone failed"
         log_error "Failed to clone repository from $REPO_URL"
         log_error "Please check your internet connection and try again."
         cleanup_on_error
@@ -175,16 +288,16 @@ main() {
     # Change to install directory
     log_info "Entering installation directory..."
     cd "$INSTALL_DIR"
-    show_progress 4 6 "Changed to install directory"
+    show_progress 4 7 "Changed to install directory"
     posix_sleep 1
     
     # Make install script executable
     log_info "Making install script executable..."
     if [ -f "install" ]; then
         chmod +x install
-        show_progress 5 6 "Install script made executable"
+        show_progress 5 7 "Install script made executable"
     else
-        show_progress 5 6 "Install script not found"
+        show_progress 5 7 "Install script not found"
         log_error "Install script not found in repository"
         log_error "Expected file: $INSTALL_DIR/install"
         cleanup_on_error
@@ -192,64 +305,81 @@ main() {
     fi
     posix_sleep 1
     
+    # Create compatible installer wrapper
+    create_compatible_installer
+    show_progress 6 7 "Installation wrapper created"
+    posix_sleep 1
+    
     # Complete preparation
-    show_progress 6 6 "Installation preparation complete"
+    show_progress 7 7 "Installation preparation complete"
     printf "\n"
     
-    # Run installer
+    # Run installer based on execution context
     log_success "Repository downloaded and prepared successfully!"
     printf "\n"
-    log_info "Starting GitSSH installation..."
-    printf "\033[1;33mPress Enter to continue with installation...\033[0m"
     
-    # POSIX compatible read - wait for user input
-    if command -v read >/dev/null 2>&1; then
-        # Use read if available
-        read dummy < /dev/tty
+    if is_piped_execution; then
+        # Automated execution for curl|sh
+        log_info "Starting automated GitSSH installation..."
+        printf "\n"
+        
+        # Clear the trap and run wrapper
+        trap - INT TERM
+        
+        # Execute the wrapper which handles the complexity
+        if ./install-wrapper; then
+            printf "\n"
+            log_success "GitSSH installation completed successfully!"
+            log_info "You can now use 'gitssh' command from anywhere in your terminal."
+            printf "\n"
+            printf "${GREEN}To get started, try:${NC}\n"
+            printf "  ${CYAN}gitssh --help${NC}     # Show help\n"
+            printf "  ${CYAN}gitssh onboard${NC}    # First-time setup wizard\n"
+            printf "  ${CYAN}gitssh user add${NC}   # Add a new SSH user\n"
+            cleanup_final
+        else
+            log_error "Automated installation failed!"
+            cleanup_on_error
+            exit 1
+        fi
     else
-        # Fallback for systems without read builtin
-        head -n 1 < /dev/tty >/dev/null
+        # Interactive execution
+        log_info "Starting GitSSH installation..."
+        printf "${YELLOW}Press Enter to continue with installation...${NC}"
+        
+        # Wait for user input
+        response=$(smart_read "" "")
+        
+        # Clear the trap and run installer
+        trap - INT TERM
+        
+        # Execute the installer directly for interactive mode
+        exec ./install
     fi
-    
-    # Clear the trap before running installer (so installer can manage its own cleanup)
-    trap - INT TERM
-    
-    # Execute the install script with proper terminal handling
-    # The installer checks for interactive terminal, so we need to ensure it has one
-    # Use exec to replace the current process and maintain terminal connection
-    log_info "Launching GitSSH installer..."
-    printf "\n"
-    
-    # Replace current process with installer to maintain terminal connection
-    # This transfers control completely to the installer
-    exec ./install
 }
 
 #================================================================#
 # ENTRY POINT
 #================================================================#
 
-# Check if running as root (optional warning)
+# Check if running as root (skip prompt for curl|sh)
 if [ "$(id -u)" -eq 0 ]; then
-    log_warning "Running as root. GitSSH is typically installed for individual users."
-    printf "\033[1;33mContinue anyway? (y/N): \033[0m"
-    
-    # POSIX compatible read
-    if command -v read >/dev/null 2>&1; then
-        read response < /dev/tty
+    if is_piped_execution; then
+        log_warning "Running as root in automated mode - proceeding..."
     else
-        response=$(head -n 1 < /dev/tty)
+        log_warning "Running as root. GitSSH is typically installed for individual users."
+        response=$(smart_read "Continue anyway? (y/N)" "n")
+        
+        case "$response" in
+            [yY]|[yY][eE][sS]) 
+                log_info "Proceeding with root installation..."
+                ;;
+            *)
+                log_info "Installation cancelled."
+                exit 0
+                ;;
+        esac
     fi
-    
-    case "$response" in
-        [yY]|[yY][eE][sS]) 
-            log_info "Proceeding with root installation..."
-            ;;
-        *)
-            log_info "Installation cancelled."
-            exit 0
-            ;;
-    esac
 fi
 
 # Run main installation
