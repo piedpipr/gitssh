@@ -41,22 +41,16 @@ _extract_username_from_remote() {
 
 # Extract repository name from URL
 _extract_repo_name() {
-    url="$1"
-    case "$url" in
-        *github.com[:/]*)
-            printf "%s" "$url" | sed 's|.*github\.com[:/][^/]*/\([^/\.]*\).*|\1|'
-            ;;
-        *gitlab.com[:/]*)
-            printf "%s" "$url" | sed 's|.*gitlab\.com[:/][^/]*/\([^/\.]*\).*|\1|'
-            ;;
-        *bitbucket.org[:/]*)
-            printf "%s" "$url" | sed 's|.*bitbucket\.org[:/][^/]*/\([^/\.]*\).*|\1|'
-            ;;
-        *)
-            # Generic extraction for other Git providers
-            printf "%s" "$url" | sed 's|.*/\([^/\.]*\)\.git$|\1|' | sed 's|.*/\([^/]*\)$|\1|'
-            ;;
-    esac
+    local url="$1"
+    local repo_name
+    
+    # Universal extraction: get everything after the last slash
+    repo_name=$(printf "%s" "$url" | sed 's|.*/||')
+    
+    # Remove .git suffix only if it exists at the end
+    repo_name=$(printf "%s" "$repo_name" | sed 's|\.git$||')
+    
+    printf "%s" "$repo_name"
 }
 
 # Check if in git repository
