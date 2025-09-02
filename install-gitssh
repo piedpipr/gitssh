@@ -27,7 +27,7 @@ show_banner() {
 ║           ██║   ██║██║ ██║ ╚════██║╚════██║██╔══██║           ║
 ║            ██████╔╝██║ ██║ ███████║███████║██║  ██║           ║
 ║            ╚═════╝ ╚═╝ ╚═╝ ╚══════╝╚══════╝╚═╝  ╚═╝v1.0-Oz    ║
-║                     <-POSIX Compliant->                      ║
+║                     <-POSIX Compliant->                       ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 Manage multiple Git, GitHub & GitLab SSH account seesions with ease! 
