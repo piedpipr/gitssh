@@ -178,11 +178,9 @@ read_user_input() {
 
 # Function to wait for user confirmation that works with piped execution
 wait_for_confirmation() {
-    prompt="$1"
-    
     if is_piped_execution; then
         # When piped, read from terminal directly
-        printf "%s" "$prompt"
+        printf "\033[1;33mPress Enter to continue with installation...\033[0m"
         if [ -r /dev/tty ]; then
             # Read a single line from the terminal
             head -n 1 < /dev/tty > /dev/null
@@ -193,7 +191,7 @@ wait_for_confirmation() {
         fi
     else
         # Normal execution
-        printf "%s" "$prompt"
+        printf "\033[1;33mPress Enter to continue with installation...\033[0m"
         read dummy
     fi
 }
@@ -264,28 +262,30 @@ main() {
     log_info "Starting GitSSH installation..."
     
     # Use the new confirmation function that handles piped execution
-    wait_for_confirmation "\033[1;33mPress Enter to continue with installation...\033[0m"
+    wait_for_confirmation
     
     # Clear the trap before running installer (so installer can manage its own cleanup)
     trap - INT TERM
     
     # Execute the install script with proper stdin handling
+    install_exit_code=0
     if is_piped_execution; then
         # When script was piped, we need to ensure the install script can also access terminal
         if [ -r /dev/tty ]; then
             # Redirect the install script's stdin to the terminal
             ./install < /dev/tty
+            install_exit_code=$?
         else
             # If no terminal, run without interactive input
             log_warning "Running installation in non-interactive mode..."
             ./install
+            install_exit_code=$?
         fi
     else
         # Normal execution
         ./install
+        install_exit_code=$?
     fi
-    
-    install_exit_code=$?
     
     if [ $install_exit_code -eq 0 ]; then
         printf "\n"
@@ -301,10 +301,10 @@ main() {
         cleanup_final
     else
         printf "\n"
-        log_error "Installation failed!"
-        log_error "Please check the error messages above and try again."
+        log_error "Installation failed or was cancelled by user!"
+        log_info "Exit code: $install_exit_code"
         cleanup_on_error
-        exit 1
+        exit $install_exit_code
     fi
 }
 
