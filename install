@@ -424,6 +424,76 @@ fi'
 # INSTALLATION FUNCTIONS
 #================================================================#
 
+install_gitssh_system() {
+    log_step "3" "Installing GitSSH v1.0 CLI system"
+    
+    # Create main installation directory
+    mkdir -p "$INSTALL_DIR"
+    printf "  ${GREEN}✓${NC} Created installation directory: ${CYAN}%s${NC}\n" "$INSTALL_DIR"
+    
+    # Create modules subdirectory
+    mkdir -p "$MODULES_DIR"
+    printf "  ${GREEN}✓${NC} Created modules directory: ${CYAN}%s${NC}\n" "$MODULES_DIR"
+    
+    # Copy main executable
+    printf "  ${CYAN}⚡${NC} Installing main executable...\n"
+    cp "gitssh" "$MAIN_SCRIPT"
+    chmod +x "$MAIN_SCRIPT"
+    printf "    ${GREEN}✓${NC} Installed: ${CYAN}gitssh${NC}\n"
+    
+    # Copy installer for future use
+    cp "install" "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR/install"
+    printf "    ${GREEN}✓${NC} Installed: ${CYAN}install${NC}\n"
+    
+    # Copy all module files
+    printf "  ${CYAN}⚡${NC} Installing modules...\n"
+    
+    installed_modules=""
+    failed_modules=""
+    
+    for module in $REQUIRED_MODULES; do
+        if [ -f "modules/$module" ]; then
+            cp "modules/$module" "$MODULES_DIR/"
+            chmod +x "$MODULES_DIR/$module"
+            installed_modules="$installed_modules $module"
+            printf "    ${GREEN}✓${NC} Installed: ${CYAN}%s${NC}\n" "$module"
+        else
+            failed_modules="$failed_modules $module"
+            printf "    ${RED}✗${NC} Failed: ${RED}%s${NC} (file not found)\n" "$module"
+        fi
+    done
+    
+    failed_count=$(count_words "$failed_modules")
+    if [ $failed_count -gt 0 ]; then
+        log_error "Failed to install required modules: $failed_modules"
+        return 1
+    fi
+    
+    # Create symlink for easy access
+    printf "  ${CYAN}⚡${NC} Creating symlink...\n"
+    
+    # Remove existing symlink if present
+    if [ -L "$SYMLINK_PATH" ]; then
+        rm "$SYMLINK_PATH"
+    fi
+    
+    # Create symlink
+    ln -s "$MAIN_SCRIPT" "$SYMLINK_PATH"
+    
+    if [ -L "$SYMLINK_PATH" ]; then
+        printf "  ${GREEN}✓${NC} Created symlink: ${CYAN}%s${NC} → ${CYAN}%s${NC}\n" "$SYMLINK_PATH" "$MAIN_SCRIPT"
+    else
+        log_error "Failed to create symlink"
+        return 1
+    fi
+    
+    installed_count=$(count_words "$installed_modules")
+    log_success "GitSSH v1.0 installation complete (1 executable + $installed_count modules + symlink)"
+    printf "\n"
+    return 0
+}
+
 setup_shell_integration() {
     log_step "4" "Setting up shell integration"
     
@@ -464,7 +534,7 @@ setup_shell_integration() {
     printf "\n"
 }
 
-# New function to update integration when completion is enabled
+# Update integration when completion is enabled
 update_integration_for_completion() {
     shell_configs=""
     [ -f "$HOME/.bashrc" ] && shell_configs="$shell_configs $HOME/.bashrc"
@@ -480,6 +550,39 @@ update_integration_for_completion() {
             printf "\n%s\n" "$EXTENDED_INTEGRATION" >> "$config_file"
         fi
     done
+}
+
+initialize_system() {
+    log_step "5" "Initializing GitSSH v1.0 configuration"
+    
+    # Test that the main executable works
+    printf "  ${CYAN}⚡${NC} Testing GitSSH CLI...\n"
+    if "$MAIN_SCRIPT" version >/dev/null 2>&1; then
+        printf "  ${GREEN}✓${NC} GitSSH CLI responds correctly\n"
+    else
+        log_error "GitSSH CLI failed to respond"
+        return 1
+    fi
+    
+    # Run initialization
+    printf "  ${CYAN}⚡${NC} Initializing system configuration...\n"
+    if "$MAIN_SCRIPT" init >/dev/null 2>&1; then
+        printf "  ${GREEN}✓${NC} System initialized successfully\n"
+    else
+        log_warning "System initialization had issues"
+        printf "  ${YELLOW}⚠${NC}  You can run 'gitssh init' manually later\n"
+    fi
+    
+    # Test basic CLI functionality
+    printf "  ${CYAN}⚡${NC} Testing CLI commands...\n"
+    if "$MAIN_SCRIPT" help >/dev/null 2>&1; then
+        printf "  ${GREEN}✓${NC} Help system working\n"
+    else
+        log_warning "Help system may not be working properly"
+    fi
+    
+    log_success "System initialization complete"
+    printf "\n"
 }
 
 create_completion_support() {
@@ -936,9 +1039,8 @@ verify_installation() {
 }
 
 #================================================================#
-# UNINSTALLATION FUNCTIONS
+# UNINSTALLATION
 #================================================================#
-
 # Function to remove GitSSH integration using exact template matching
 remove_gitssh_integration() {
     config_file="$1"
@@ -947,28 +1049,50 @@ remove_gitssh_integration() {
         return 0
     fi
     
-    # Create temporary file for clean content
+    # Check if GitSSH integration exists
+    if ! grep -q "# GitSSH v1.0 CLI Integration" "$config_file"; then
+        return 0
+    fi
+    
+    # Create temporary file
     temp_file=$(mktemp)
     
-    # Read file and skip GitSSH integration blocks
-    skip_lines=0
+    # Strategy: Remove everything from the comment line to the final fi of that block
+    # We'll process line by line and track context
+    
+    in_gitssh_block=0
+    brace_level=0
     
     while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in
             "# GitSSH v1.0 CLI Integration")
-                # Start of GitSSH block - determine which template
-                if grep -A 15 "^# GitSSH v1.0 CLI Integration" "$config_file" | grep -q "completion.sh"; then
-                    # Extended integration (11 lines total)
-                    skip_lines=11
-                else
-                    # Base integration (7 lines total)  
-                    skip_lines=7
-                fi
+                in_gitssh_block=1
+                brace_level=0
                 ;;
             *)
-                if [ $skip_lines -gt 0 ]; then
-                    skip_lines=$((skip_lines - 1))
+                if [ $in_gitssh_block -eq 1 ]; then
+                    # Track fi statements to know when block ends
+                    case "$line" in
+                        *"if "*)
+                            brace_level=$((brace_level + 1))
+                            ;;
+                        "fi")
+                            if [ $brace_level -gt 0 ]; then
+                                brace_level=$((brace_level - 1))
+                            else
+                                # This fi closes the main block
+                                in_gitssh_block=0
+                            fi
+                            ;;
+                        "esac")
+                            # esac might also end a block
+                            if [ $brace_level -eq 0 ]; then
+                                in_gitssh_block=0
+                            fi
+                            ;;
+                    esac
                 else
+                    # Not in GitSSH block, keep the line
                     printf "%s\n" "$line" >> "$temp_file"
                 fi
                 ;;
@@ -987,7 +1111,7 @@ interactive_uninstall() {
 ║                                                              ║
 ║                        UNINSTALLER                           ║
 ║                                                              ║
-║                       GitSSH v1.0 CLI                        ║
+║                      GitSSH v1.0 CLI                         ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 EOF
