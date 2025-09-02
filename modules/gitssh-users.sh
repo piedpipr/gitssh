@@ -325,14 +325,26 @@ user_status() {
     printf "==================================\n"
 }
 
-# Switch to Another User
+# Switch to Another User (Local/Repository-specific by default)
 user_switch() {
     if [ $# -eq 0 ]; then
         printf "Error: Username required\n"
         printf "Usage: gitssh user switch <username>\n"
+        printf "       gitssh user switch -g <username>  (global)\n"
         printf "Available users:\n"
         user_list --simple | sed 's/^/  /'
         return 1
+    fi
+    
+    # Check for global flag
+    global_flag=false
+    if [ "$1" = "-g" ] || [ "$1" = "--global" ]; then
+        global_flag=true
+        shift
+        if [ $# -eq 0 ]; then
+            printf "Error: Username required after -g flag\n"
+            return 1
+        fi
     fi
     
     username="$1"
@@ -350,14 +362,30 @@ user_switch() {
     email=$(printf "%s" "$user_details" | jq -r '.email')
     ssh_host=$(printf "%s" "$user_details" | jq -r '.ssh_host')
     
-    # Switch globally
-    git config --global user.name "$name"
-    git config --global user.email "$email"
-    
-    _print_success "Switched to $username globally"
-    printf "  Name: %s\n" "$name"
-    printf "  Email: %s\n" "$email"
-    printf "  SSH Host: %s\n" "$ssh_host"
+    if [ "$global_flag" = "true" ]; then
+        # Switch globally
+        git config --global user.name "$name"
+        git config --global user.email "$email"
+        _print_success "Switched to $username globally"
+        printf "  Name: %s\n" "$name"
+        printf "  Email: %s\n" "$email"
+        printf "  SSH Host: %s\n" "$ssh_host"
+    else
+        # Switch locally (repository-specific)
+        if ! _is_git_repo; then
+            _print_error "Not in a Git repository"
+            printf "Use 'gitssh user switch -g $username' for global switch\n"
+            return 1
+        fi
+        
+        git config user.name "$name"
+        git config user.email "$email"
+        _print_success "Switched to $username for this repository"
+        printf "  Repository: $(basename "$(pwd)")\n"
+        printf "  Name: %s\n" "$name"
+        printf "  Email: %s\n" "$email"
+        printf "  SSH Host: %s\n" "$ssh_host"
+    fi
     
     # Test SSH connection
     printf "Testing SSH connection...\n"
@@ -366,6 +394,11 @@ user_switch() {
     else
         _print_warning "SSH connection failed - check SSH setup"
     fi
+}
+
+# Helper function to check if current directory is a Git repository
+_is_git_repo() {
+    git rev-parse --git-dir >/dev/null 2>&1
 }
 
 # Simple user list for other commands

@@ -130,10 +130,24 @@ _handle_user_commands() {
             if [ $# -eq 0 ]; then
                 printf "Error: Username required\n" >&2
                 printf "Usage: gitssh user switch <username>\n" >&2
-                user_list_simple
+                printf "       gitssh user switch -g <username>\n" >&2
+                user_list --simple | sed 's/^/  /'
                 return 1
             fi
-            user_switch "$@"
+
+            case "$1" in
+                -g|--global)
+                    shift
+                    if [ $# -eq 0 ]; then
+                        printf "Error: Username required after %s flag\n" "$1" >&2
+                        return 1
+                    fi
+                    user_switch -g "$@"
+                    ;;
+                *)
+                    user_switch "$@"
+                    ;;
+            esac
             ;;
         edit)
             user_edit "$@"
