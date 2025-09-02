@@ -391,80 +391,38 @@ Install them using your package manager:"
     printf "\n"
     return 0
 }
+#================================================================#
+# PREDEFINED INTEGRATION TEMPLATES
+#================================================================#
+
+# Base integration block (without completion)
+BASE_INTEGRATION='# GitSSH v1.0 CLI Integration
+# Add ~/.local/bin to PATH if not already present
+if [ -d "$HOME/.local/bin" ]; then
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) export PATH="$PATH:$HOME/.local/bin" ;;
+    esac
+fi'
+
+# Extended integration block (with completion)
+EXTENDED_INTEGRATION='# GitSSH v1.0 CLI Integration
+# Add ~/.local/bin to PATH if not already present
+if [ -d "$HOME/.local/bin" ]; then
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) export PATH="$PATH:$HOME/.local/bin" ;;
+    esac
+fi
+
+# GitSSH CLI completion (if available)
+if [ -f "$HOME/.local/bin/gitssh-libs/completion.sh" ]; then
+    . "$HOME/.local/bin/gitssh-libs/completion.sh"
+fi'
 
 #================================================================#
 # INSTALLATION FUNCTIONS
 #================================================================#
-
-install_gitssh_system() {
-    log_step "3" "Installing GitSSH v1.0 CLI system"
-    
-    # Create main installation directory
-    mkdir -p "$INSTALL_DIR"
-    printf "  ${GREEN}✓${NC} Created installation directory: ${CYAN}%s${NC}\n" "$INSTALL_DIR"
-    
-    # Create modules subdirectory
-    mkdir -p "$MODULES_DIR"
-    printf "  ${GREEN}✓${NC} Created modules directory: ${CYAN}%s${NC}\n" "$MODULES_DIR"
-    
-    # Copy main executable
-    printf "  ${CYAN}⚡${NC} Installing main executable...\n"
-    cp "gitssh" "$MAIN_SCRIPT"
-    chmod +x "$MAIN_SCRIPT"
-    printf "    ${GREEN}✓${NC} Installed: ${CYAN}gitssh${NC}\n"
-    
-    # Copy installer for future use
-    cp "install" "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR/install"
-    printf "    ${GREEN}✓${NC} Installed: ${CYAN}install${NC}\n"
-    
-    # Copy all module files
-    printf "  ${CYAN}⚡${NC} Installing modules...\n"
-    
-    installed_modules=""
-    failed_modules=""
-    
-    for module in $REQUIRED_MODULES; do
-        if [ -f "modules/$module" ]; then
-            cp "modules/$module" "$MODULES_DIR/"
-            chmod +x "$MODULES_DIR/$module"
-            installed_modules="$installed_modules $module"
-            printf "    ${GREEN}✓${NC} Installed: ${CYAN}%s${NC}\n" "$module"
-        else
-            failed_modules="$failed_modules $module"
-            printf "    ${RED}✗${NC} Failed: ${RED}%s${NC} (file not found)\n" "$module"
-        fi
-    done
-    
-    failed_count=$(count_words "$failed_modules")
-    if [ $failed_count -gt 0 ]; then
-        log_error "Failed to install required modules: $failed_modules"
-        return 1
-    fi
-    
-    # Create symlink for easy access
-    printf "  ${CYAN}⚡${NC} Creating symlink...\n"
-    
-    # Remove existing symlink if present
-    if [ -L "$SYMLINK_PATH" ]; then
-        rm "$SYMLINK_PATH"
-    fi
-    
-    # Create symlink
-    ln -s "$MAIN_SCRIPT" "$SYMLINK_PATH"
-    
-    if [ -L "$SYMLINK_PATH" ]; then
-        printf "  ${GREEN}✓${NC} Created symlink: ${CYAN}%s${NC} → ${CYAN}%s${NC}\n" "$SYMLINK_PATH" "$MAIN_SCRIPT"
-    else
-        log_error "Failed to create symlink"
-        return 1
-    fi
-    
-    installed_count=$(count_words "$installed_modules")
-    log_success "GitSSH v1.0 installation complete (1 executable + $installed_count modules + symlink)"
-    printf "\n"
-    return 0
-}
 
 setup_shell_integration() {
     log_step "4" "Setting up shell integration"
@@ -484,81 +442,44 @@ setup_shell_integration() {
         shell_configs="$HOME/.bashrc"
     fi
     
-    # GitSSH v1.0 integration block
-    integration_block="# GitSSH v1.0 CLI Integration
-# Add ~/.local/bin to PATH if not already present
-if [ -d \"\$HOME/.local/bin\" ]; then
-    case \":\$PATH:\" in
-        *\":\$HOME/.local/bin:\"*) ;;
-        *) export PATH=\"\$PATH:\$HOME/.local/bin\" ;;
-    esac
-fi
-
-# GitSSH CLI completion (if available)
-if [ -f \"\$HOME/.local/bin/gitssh/completion.sh\" ]; then
-    . \"\$HOME/.local/bin/gitssh/completion.sh\"
-fi"
+    # Determine which integration block to use
+    integration_block="$BASE_INTEGRATION"
     
-    path_updated=false
+    # This will be set later when create_completion_support() runs
+    # For now, we always use base integration, then update if completion is enabled
     
     for config_file in $shell_configs; do
         config_name=$(basename "$config_file")
         
-        # Check if already integrated
-        if grep -q "GitSSH.*Integration\|GitSSH.*CLI" "$config_file" 2>/dev/null; then
-            printf "  ${YELLOW}⚠${NC} Updating existing integration in ${CYAN}%s${NC}\n" "$config_name"
-            
-            # Remove old integration blocks
-            sed -i '/# GitSSH.*Integration/,+10d' "$config_file" 2>/dev/null || true
-            sed -i '/# Git-SSH Manager Integration/,+5d' "$config_file" 2>/dev/null || true
-        fi
+        # Remove any existing GitSSH integration first
+        remove_gitssh_integration "$config_file"
         
-        # Add new integration block
+        # Add the base integration block
         printf "\n%s\n" "$integration_block" >> "$config_file"
         
         printf "  ${GREEN}✓${NC} Added integration to ${CYAN}%s${NC}\n" "$config_name"
-        path_updated=true
     done
-    
-    if [ "$path_updated" = "true" ]; then
-        printf "  ${BLUE}ℹ${NC}  PATH updated - restart terminal or run: source ~/.bashrc\n"
-    fi
     
     log_success "Shell integration complete"
     printf "\n"
 }
 
-initialize_system() {
-    log_step "5" "Initializing GitSSH v1.0 configuration"
+# New function to update integration when completion is enabled
+update_integration_for_completion() {
+    shell_configs=""
+    [ -f "$HOME/.bashrc" ] && shell_configs="$shell_configs $HOME/.bashrc"
+    [ -f "$HOME/.zshrc" ] && shell_configs="$shell_configs $HOME/.zshrc" 
+    [ -f "$HOME/.profile" ] && shell_configs="$shell_configs $HOME/.profile"
     
-    # Test that the main executable works
-    printf "  ${CYAN}⚡${NC} Testing GitSSH CLI...\n"
-    if "$MAIN_SCRIPT" version >/dev/null 2>&1; then
-        printf "  ${GREEN}✓${NC} GitSSH CLI responds correctly\n"
-    else
-        log_error "GitSSH CLI failed to respond"
-        return 1
-    fi
-    
-    # Run initialization
-    printf "  ${CYAN}⚡${NC} Initializing system configuration...\n"
-    if "$MAIN_SCRIPT" init >/dev/null 2>&1; then
-        printf "  ${GREEN}✓${NC} System initialized successfully\n"
-    else
-        log_warning "System initialization had issues"
-        printf "  ${YELLOW}⚠${NC}  You can run 'gitssh init' manually later\n"
-    fi
-    
-    # Test basic CLI functionality
-    printf "  ${CYAN}⚡${NC} Testing CLI commands...\n"
-    if "$MAIN_SCRIPT" help >/dev/null 2>&1; then
-        printf "  ${GREEN}✓${NC} Help system working\n"
-    else
-        log_warning "Help system may not be working properly"
-    fi
-    
-    log_success "System initialization complete"
-    printf "\n"
+    for config_file in $shell_configs; do
+        if [ -f "$config_file" ]; then
+            # Remove existing integration
+            remove_gitssh_integration "$config_file"
+            
+            # Add extended integration with completion
+            printf "\n%s\n" "$EXTENDED_INTEGRATION" >> "$config_file"
+        fi
+    done
 }
 
 create_completion_support() {
@@ -632,6 +553,11 @@ EOF
             
             chmod +x "$completion_file"
             printf "  ${GREEN}✓${NC} Created completion script: ${CYAN}%s${NC}\n" "$completion_file"
+            
+            # Update shell integration to include completion
+            update_integration_for_completion
+            
+            printf "  ${GREEN}✓${NC} Updated shell integration with completion support\n"
             printf "  ${BLUE}ℹ${NC}  Will be loaded automatically in new shell sessions\n"
             
             log_success "Tab completion setup complete"
@@ -1010,8 +936,48 @@ verify_installation() {
 }
 
 #================================================================#
-# UNINSTALLATION
+# UNINSTALLATION FUNCTIONS
 #================================================================#
+
+# Function to remove GitSSH integration using exact template matching
+remove_gitssh_integration() {
+    config_file="$1"
+    
+    if [ ! -f "$config_file" ]; then
+        return 0
+    fi
+    
+    # Create temporary file for clean content
+    temp_file=$(mktemp)
+    
+    # Read file and skip GitSSH integration blocks
+    skip_lines=0
+    
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            "# GitSSH v1.0 CLI Integration")
+                # Start of GitSSH block - determine which template
+                if grep -A 15 "^# GitSSH v1.0 CLI Integration" "$config_file" | grep -q "completion.sh"; then
+                    # Extended integration (11 lines total)
+                    skip_lines=11
+                else
+                    # Base integration (7 lines total)  
+                    skip_lines=7
+                fi
+                ;;
+            *)
+                if [ $skip_lines -gt 0 ]; then
+                    skip_lines=$((skip_lines - 1))
+                else
+                    printf "%s\n" "$line" >> "$temp_file"
+                fi
+                ;;
+        esac
+    done < "$config_file"
+    
+    # Replace original with cleaned version
+    mv "$temp_file" "$config_file"
+}
 
 interactive_uninstall() {
     clear
@@ -1021,7 +987,7 @@ interactive_uninstall() {
 ║                                                              ║
 ║                        UNINSTALLER                           ║
 ║                                                              ║
-║                    GitSSH v1.0 CLI                           ║
+║                       GitSSH v1.0 CLI                        ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 EOF
@@ -1030,12 +996,11 @@ EOF
     printf "${YELLOW}${BOLD}This will completely remove GitSSH v1.0 from your system${NC}\n"
     printf "\n"
     
-    draw_box "UNINSTALLATION PLAN" "1. Remove main installation directory (~/.local/bin/gitssh/)
+    draw_box "UNINSTALLATION PLAN" "1. Remove main installation directory (~/.local/bin/gitssh-libs/)
 2. Remove symlink (~/.local/bin/gitssh)
-3. Remove shell integrations from config files
+3. Remove shell integrations using exact template matching
 4. Optionally remove configuration files
-5. Clean up PATH modifications
-6. Remove tab completion (if present)"
+5. Clean up completion support"
     printf "\n"
     
     printf "${RED}${BOLD}⚠ WARNING: This action cannot be undone!${NC}\n"
@@ -1072,19 +1037,18 @@ EOF
         log_info "Symlink not found: $SYMLINK_PATH"
     fi
     
-    # Remove shell integrations
+    # Remove shell integrations using exact template matching
     shell_configs="$HOME/.bashrc $HOME/.zshrc $HOME/.profile"
     files_modified=0
     
     for config_file in $shell_configs; do
-        if [ -f "$config_file" ] && grep -q "GitSSH.*Integration\|GitSSH.*CLI" "$config_file"; then
+        if [ -f "$config_file" ] && grep -q "# GitSSH v1.0 CLI Integration" "$config_file"; then
             # Create backup
             backup_name="${config_file}.backup-$(date +%Y%m%d-%H%M%S)"
             cp "$config_file" "$backup_name"
             
-            # Remove integration blocks
-            sed -i '/# GitSSH.*Integration/,+10d' "$config_file" 2>/dev/null || true
-            sed -i '/# Git-SSH Manager Integration/,+5d' "$config_file" 2>/dev/null || true
+            # Remove integration using template matching
+            remove_gitssh_integration "$config_file"
             
             config_name=$(basename "$config_file")
             log_success "Removed integration from $config_name"
