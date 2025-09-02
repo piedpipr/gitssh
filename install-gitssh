@@ -144,8 +144,7 @@ is_piped_execution() {
 
 # Function to read user input that works with both direct execution and piped execution
 read_user_input() {
-    prompt="$1"
-    printf "%s" "$prompt"
+    printf "\033[1;33mContinue anyway? (y/N): \033[0m"
     
     if is_piped_execution; then
         # When piped, read from terminal directly via /dev/tty
@@ -317,7 +316,7 @@ if [ "$(id -u)" -eq 0 ]; then
     log_warning "Running as root. GitSSH is typically installed for individual users."
     
     # Use the new input function that handles piped execution
-    response=$(read_user_input "\033[1;33mContinue anyway? (y/N): \033[0m")
+    response=$(read_user_input)
     
     case "$response" in
         [yY]|[yY][eE][sS]) 
