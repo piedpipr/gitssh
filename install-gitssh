@@ -267,44 +267,23 @@ main() {
     trap - INT TERM
     
     # Execute the install script with proper stdin handling
-    install_exit_code=0
     if is_piped_execution; then
         # When script was piped, we need to ensure the install script can also access terminal
         if [ -r /dev/tty ]; then
             # Redirect the install script's stdin to the terminal
             ./install < /dev/tty
-            install_exit_code=$?
         else
             # If no terminal, run without interactive input
             log_warning "Running installation in non-interactive mode..."
             ./install
-            install_exit_code=$?
         fi
     else
         # Normal execution
         ./install
-        install_exit_code=$?
     fi
     
-    if [ $install_exit_code -eq 0 ]; then
-        printf "\n"
-        log_success "GitSSH installation completed successfully!"
-        log_info "You can now use 'gitssh' command from anywhere in your terminal."
-        printf "\n"
-        printf "\033[0;32mTo get started, try:\033[0m\n"
-        printf "  \033[0;36mgitssh --help\033[0m     # Show help\n"
-        printf "  \033[0;36mgitssh onboard\033[0m    # First-time setup wizard\n"
-        printf "  \033[0;36mgitssh user add\033[0m   # Add a new SSH user\n"
-        
-        # Clean up only after successful installation
-        cleanup_final
-    else
-        printf "\n"
-        log_error "Installation failed or was cancelled by user!"
-        log_info "Exit code: $install_exit_code"
-        cleanup_on_error
-        exit $install_exit_code
-    fi
+    # Always cleanup after install script finishes, regardless of outcome
+    cleanup_final
 }
 
 #================================================================#
