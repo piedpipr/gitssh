@@ -141,19 +141,43 @@ gitssh session set github-personal
 * `gitssh ssh doctor` → debug SSH issues
 * `gitssh commit` / `gitssh push` → safer versions of Git commands
 
-There’s a lot more (`gitssh help` shows everything), but those are the essentials.
+## Essential Commands
+
+**Account management:**
+```bash
+gitssh user add           # Add new account
+gitssh user list          # Show all accounts
+gitssh switch <user>      # Switch globally
+gitssh session set        # Set for current repo only
+```
+
+**Working with repos:**
+```bash
+gitssh clone <url>        # Enhanced clone with auto-setup
+gitssh remote convert     # Convert HTTPS remotes to SSH
+gitssh status             # Git status + user info
+gitssh commit             # Commit with identity verification
+```
+
+**Troubleshooting:**
+```bash
+gitssh ssh doctor         # Diagnose SSH problems
+gitssh ssh status         # Check SSH setup
+gitssh validate           # Verify installation
+```
+
+There's more (`gitssh help` shows everything), but these cover most daily use.
 
 ---
 
-## Config Files
+## Configuration
 
-GitSSH stores data in JSON (easy to read/edit):
+GitSSH uses simple JSON files you can read and edit:
 
-* `~/.gitssh-users.json` → users & SSH keys
-* `~/.gitssh-sessions.json` → repo-to-user mapping
+- `~/.gitssh-users.json` - your accounts and SSH keys
+- `~/.gitssh-sessions.json` - per-repo user mappings
 
 Example user config:
-
 ```json
 {
   "users": {
@@ -162,47 +186,169 @@ Example user config:
       "email": "john@example.com",
       "ssh_key": "~/.ssh/id_ed25519_github_personal",
       "host": "github.com"
+    },
+    "github-work": {
+      "name": "John Doe", 
+      "email": "john.doe@company.com",
+      "ssh_key": "~/.ssh/id_ed25519_github_work",
+      "host": "github.com"
     }
   },
   "default_user": "github-personal"
 }
 ```
 
----
+## Common Workflows
 
-## Troubleshooting
+### Multiple GitHub accounts
 
-* Run `gitssh ssh doctor` for SSH issues.
-* Run `gitssh validate` to check setup.
-* If something’s really broken:
+```bash
+# Add accounts
+gitssh user add  # Follow prompts for 'github-personal'
+gitssh user add  # Follow prompts for 'github-work'
 
-  ```bash
-  ./install uninstall
-  ./install install
-  ```
+# Switch contexts
+gitssh switch github-work
+gitssh clone git@github.com:company/project.git
 
----
+gitssh switch github-personal  
+gitssh clone git@github.com:myuser/personal-project.git
+```
+
+### Per-repository identity
+
+```bash
+# Set specific user for this repo
+cd work-project
+gitssh session set github-work
+
+cd personal-project  
+gitssh session set github-personal
+
+# GitSSH remembers these settings
+```
+
+### Fix existing repositories
+
+```bash
+# Convert HTTPS to SSH
+cd existing-repo
+gitssh remote convert
+
+# Check what's configured
+gitssh info
+gitssh ssh status
+```
+
+## Architecture
+
+GitSSH installs as a modular system:
+
+```
+~/.local/bin/gitssh-libs/     # Main installation
+├── gitssh                   # CLI dispatcher
+├── install                  # Installer
+└── modules/                 # Core functionality
+    ├── gitssh-utils.sh      # Utilities
+    ├── gitssh-users.sh      # User management
+    ├── gitssh-sessions.sh   # Session handling
+    ├── gitssh-remotes.sh    # Remote management
+    ├── gitssh-commands.sh   # Git command wrappers
+    ├── gitssh-init.sh       # Initialization
+    └── gitssh-setup.sh      # Setup wizards
+
+~/.local/bin/gitssh          # Symlink for easy access
+```
 
 ## Requirements
 
-* `git`
-* `ssh` (OpenSSH)
-* `jq`
+You need these installed:
+- `git` - obviously
+- `ssh` - OpenSSH or compatible
+- `jq` - for JSON config handling
 
-Install them with your package manager (`apt`, `yum`, `brew`, etc.).
+Install with your package manager:
+```bash
+# Ubuntu/Debian
+sudo apt install git openssh-client jq
 
----
+# macOS  
+brew install git openssh jq
+
+# Others: yum, dnf, pacman, etc.
+```
+
+## Troubleshooting
+
+**Command not found:**
+```bash
+# Check installation
+./install verify
+source ~/.bashrc  # Reload shell
+```
+
+**SSH problems:**
+```bash
+gitssh ssh doctor    # Auto-diagnose issues
+gitssh ssh test github.com  # Test specific host
+```
+
+**Identity issues:**
+```bash
+gitssh user status   # Check current user
+gitssh session show  # Check repo mappings
+gitssh session clear # Reset if confused
+```
+
+**Nuclear option:**
+```bash
+./install uninstall
+./install install    # Fresh start
+```
+
+## Advanced Features
+
+**Interactive setup wizards:**
+```bash
+gitssh setup github  # GitHub-specific setup
+gitssh setup gitlab  # GitLab-specific setup
+```
+
+**Configuration management:**
+```bash
+gitssh config backup   # Backup settings
+gitssh config restore  # Restore from backup
+gitssh config migrate  # Upgrade config format
+```
+
+**Batch operations:**
+```bash
+# Check SSH for all configured hosts
+gitssh ssh status
+
+# Get recommendations for current repo
+gitssh remote recommendations
+```
+
+## Development
+
+The codebase is modular and POSIX-compatible. Each module handles a specific area (users, sessions, SSH, etc.) with comprehensive error handling.
+
+To contribute:
+1. Fork the repo
+2. Follow POSIX shell conventions  
+3. Add proper error handling
+4. Test with `./install verify`
+5. Submit a pull request
 
 ## License
 
-MIT — do whatever you want, just don’t blame me if it breaks.
-
----
+MIT - use it however you want.
 
 ## Links
 
-* Docs: [Wiki](https://github.com/piedpipr/gitssh/wiki)
-* Issues: [Report here](https://github.com/piedpipr/gitssh/issues)
-* Discussions: [Join here](https://github.com/piedpipr/gitssh/discussions)
+- **Issues:** [Report problems](https://github.com/piedpipr/gitssh/issues)
+- **Discussions:** [Get help](https://github.com/piedpipr/gitssh/discussions)  
+- **Wiki:** [Detailed docs](https://github.com/piedpipr/gitssh/wiki)
 
 ---
