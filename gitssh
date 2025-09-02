@@ -479,7 +479,8 @@ USER MANAGEMENT:
     user add                Add new user account
     user remove <user>      Remove user account
     user list               List all configured users
-    user switch <user>      Switch to user globally
+    user switch <user>      Switch to user locally
+    user switch -g <user>   Switch to user globally
     user status             Show current user status
 
 SESSION MANAGEMENT:
@@ -561,8 +562,11 @@ USER MANAGEMENT:
           --simple            Simple list for scripting
           
     gitssh user switch <username>
+        Switch to specified user locally
+    
+    gitssh user switch -g <username>
         Switch to specified user globally
-        
+
     gitssh user status
         Show current Git user and SSH status
 
