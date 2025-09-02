@@ -1,6 +1,4 @@
-<img width="702" height="970" alt="Screenshot From 2025-09-02 04-34-31" src="https://github.com/user-attachments/assets/aeccf679-e6e1-4a72-861a-1f75389a7e3c" />
-
----
+(This is currently in pre-release stage, contributions by testing, reporting and bug-fixing are much appreciated)
 # GitSSH
 ```
 ╔═══════════════════════════════════════════════════════════════╗
@@ -15,8 +13,81 @@
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 Manage multiple Git, GitHub & GitLab SSH account seesions with ease! 
-```
 
+GitSSH v1.0 - Multi Git,GitHub,GitLab and SSH account management with ease!
+
+USAGE:
+    gitssh <command> [subcommand] [options]
+
+SETUP & INITIALIZATION:
+    init                    Initialize GitSSH configuration
+    onboard                 Interactive first-time setup wizard
+    validate                Validate system configuration
+
+USER MANAGEMENT:
+    user add                Add new user account
+    user remove <user>      Remove user account
+    user list               List all configured users
+    user switch <user>      Switch to user globally
+    user status             Show current user status
+
+SESSION MANAGEMENT:
+    session set             Set user for current repository
+    session show            Show current session status
+    session clear           Clear session data
+    session forget          Remove persistent config for repo
+    session list            List all session repositories
+
+SSH MANAGEMENT:
+    ssh status              Show SSH configuration status
+    ssh doctor              Diagnose SSH connection issues
+    ssh repair              Fix common SSH problems
+    ssh test <host>         Test SSH connection
+    
+SETUP WIZARDS:
+    setup github            Setup GitHub SSH authentication
+    setup gitlab            Setup GitLab SSH authentication
+
+REPOSITORY OPERATIONS:
+    clone <url>             Enhanced git clone with auto-setup
+    status                  Enhanced git status with user info
+    info                    Show detailed repository information
+    commit [opts]           Enhanced git commit with verification
+    push [opts]             Enhanced git push with verification
+
+REMOTE MANAGEMENT:
+    remote convert          Convert HTTPS remote to SSH
+    remote add <name> <url> Add remote with SSH conversion
+    remote check            Check remote configuration
+    remote list             List all remotes with details
+
+CONFIGURATION:
+    config show             Show current configuration
+    config reset            Reset configuration to defaults
+    config backup           Backup configuration files
+    config restore <path>   Restore from backup
+
+INSTALLATION/UNINSTALLATION/UPDATE MANAGEMENT:
+    gitssh reinstall                   Reinstall GitSSH system
+    gitssh uninstall                   Completely remove GitSSH
+    gitssh update                      Update to latest version
+    gitssh verify                      Verify installation integrity
+    gitssh diagnose                    Run installation diagnostics
+
+INFORMATION:
+    help [command]          Show help (general or command-specific)
+    version                 Show version information
+
+EXAMPLES:
+    gitssh onboard                    # First-time setup
+    gitssh user add                   # Add new user
+    gitssh user switch work           # Switch to work identity
+    gitssh session set                # Configure current repo
+    gitssh clone git@github.com:user/repo.git
+    gitssh remote convert             # Convert HTTPS to SSH
+    gitssh ssh status                 # Check SSH setup
+
+```
 **A small tool to manage multiple Git accounts (GitHub, GitLab etc.) with SSH — without losing your mind.**
 
 ---
